@@ -25,32 +25,12 @@ import (
 	"time"
 
 	router "github.com/gorilla/mux"
+	"github.com/minio/dsync"
 )
 
 const lockRPCPath = "/minio/lock"
 const lockMaintenanceLoop = 1 * time.Minute
 const lockCheckValidityInterval = 2 * time.Minute
-
-// LockArgs besides lock name, holds Token and Timestamp for session
-// authentication and validation server restart.
-type LockArgs struct {
-	Name      string
-	Token     string
-	Timestamp time.Time
-	Node      string
-	RPCPath   string
-	UID       string
-}
-
-// SetToken - sets the token to the supplied value.
-func (l *LockArgs) SetToken(token string) {
-	l.Token = token
-}
-
-// SetTimestamp - sets the timestamp to the supplied value.
-func (l *LockArgs) SetTimestamp(tstamp time.Time) {
-	l.Timestamp = tstamp
-}
 
 // lockRequesterInfo stores various info from the client for each lock that is requested
 type lockRequesterInfo struct {
@@ -69,7 +49,7 @@ func isWriteLock(lri []lockRequesterInfo) bool {
 
 // lockServer is type for RPC handlers
 type lockServer struct {
-	loginServer
+	AuthRPCServer
 	rpcPath string
 	mutex   sync.Mutex
 	lockMap map[string][]lockRequesterInfo
@@ -130,17 +110,17 @@ func registerStorageLockers(mux *router.Router, lockServers []*lockServer) error
 func (l *lockServer) Lock(args *LockArgs, reply *bool) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if err := l.validateLockArgs(args); err != nil {
+	if err := args.IsAuthenticated(); err != nil {
 		return err
 	}
-	_, *reply = l.lockMap[args.Name]
+	_, *reply = l.lockMap[args.dsyncLockArgs.Resource]
 	if !*reply { // No locks held on the given name, so claim write lock
-		l.lockMap[args.Name] = []lockRequesterInfo{
+		l.lockMap[args.dsyncLockArgs.Resource] = []lockRequesterInfo{
 			{
 				writer:        true,
-				node:          args.Node,
-				rpcPath:       args.RPCPath,
-				uid:           args.UID,
+				node:          args.dsyncLockArgs.ServerAddr,
+				rpcPath:       args.dsyncLockArgs.ServiceEndpoint,
+				uid:           args.dsyncLockArgs.UID,
 				timestamp:     time.Now().UTC(),
 				timeLastCheck: time.Now().UTC(),
 			},
@@ -154,18 +134,18 @@ func (l *lockServer) Lock(args *LockArgs, reply *bool) error {
 func (l *lockServer) Unlock(args *LockArgs, reply *bool) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if err := l.validateLockArgs(args); err != nil {
+	if err := args.IsAuthenticated(); err != nil {
 		return err
 	}
 	var lri []lockRequesterInfo
-	if lri, *reply = l.lockMap[args.Name]; !*reply { // No lock is held on the given name
-		return fmt.Errorf("Unlock attempted on an unlocked entity: %s", args.Name)
+	if lri, *reply = l.lockMap[args.dsyncLockArgs.Resource]; !*reply { // No lock is held on the given name
+		return fmt.Errorf("Unlock attempted on an unlocked entity: %s", args.dsyncLockArgs.Resource)
 	}
 	if *reply = isWriteLock(lri); !*reply { // Unless it is a write lock
-		return fmt.Errorf("Unlock attempted on a read locked entity: %s (%d read locks active)", args.Name, len(lri))
+		return fmt.Errorf("Unlock attempted on a read locked entity: %s (%d read locks active)", args.dsyncLockArgs.Resource, len(lri))
 	}
-	if !l.removeEntry(args.Name, args.UID, &lri) {
-		return fmt.Errorf("Unlock unable to find corresponding lock for uid: %s", args.UID)
+	if !l.removeEntry(args.dsyncLockArgs.Resource, args.dsyncLockArgs.UID, &lri) {
+		return fmt.Errorf("Unlock unable to find corresponding lock for uid: %s", args.dsyncLockArgs.UID)
 	}
 	return nil
 }
@@ -174,23 +154,23 @@ func (l *lockServer) Unlock(args *LockArgs, reply *bool) error {
 func (l *lockServer) RLock(args *LockArgs, reply *bool) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if err := l.validateLockArgs(args); err != nil {
+	if err := args.IsAuthenticated(); err != nil {
 		return err
 	}
 	lrInfo := lockRequesterInfo{
 		writer:        false,
-		node:          args.Node,
-		rpcPath:       args.RPCPath,
-		uid:           args.UID,
+		node:          args.dsyncLockArgs.ServerAddr,
+		rpcPath:       args.dsyncLockArgs.ServiceEndpoint,
+		uid:           args.dsyncLockArgs.UID,
 		timestamp:     time.Now().UTC(),
 		timeLastCheck: time.Now().UTC(),
 	}
-	if lri, ok := l.lockMap[args.Name]; ok {
+	if lri, ok := l.lockMap[args.dsyncLockArgs.Resource]; ok {
 		if *reply = !isWriteLock(lri); *reply { // Unless there is a write lock
-			l.lockMap[args.Name] = append(l.lockMap[args.Name], lrInfo)
+			l.lockMap[args.dsyncLockArgs.Resource] = append(l.lockMap[args.dsyncLockArgs.Resource], lrInfo)
 		}
 	} else { // No locks held on the given name, so claim (first) read lock
-		l.lockMap[args.Name] = []lockRequesterInfo{lrInfo}
+		l.lockMap[args.dsyncLockArgs.Resource] = []lockRequesterInfo{lrInfo}
 		*reply = true
 	}
 	return nil
@@ -200,18 +180,18 @@ func (l *lockServer) RLock(args *LockArgs, reply *bool) error {
 func (l *lockServer) RUnlock(args *LockArgs, reply *bool) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if err := l.validateLockArgs(args); err != nil {
+	if err := args.IsAuthenticated(); err != nil {
 		return err
 	}
 	var lri []lockRequesterInfo
-	if lri, *reply = l.lockMap[args.Name]; !*reply { // No lock is held on the given name
-		return fmt.Errorf("RUnlock attempted on an unlocked entity: %s", args.Name)
+	if lri, *reply = l.lockMap[args.dsyncLockArgs.Resource]; !*reply { // No lock is held on the given name
+		return fmt.Errorf("RUnlock attempted on an unlocked entity: %s", args.dsyncLockArgs.Resource)
 	}
 	if *reply = !isWriteLock(lri); !*reply { // A write-lock is held, cannot release a read lock
-		return fmt.Errorf("RUnlock attempted on a write locked entity: %s", args.Name)
+		return fmt.Errorf("RUnlock attempted on a write locked entity: %s", args.dsyncLockArgs.Resource)
 	}
-	if !l.removeEntry(args.Name, args.UID, &lri) {
-		return fmt.Errorf("RUnlock unable to find corresponding read lock for uid: %s", args.UID)
+	if !l.removeEntry(args.dsyncLockArgs.Resource, args.dsyncLockArgs.UID, &lri) {
+		return fmt.Errorf("RUnlock unable to find corresponding read lock for uid: %s", args.dsyncLockArgs.UID)
 	}
 	return nil
 }
@@ -220,14 +200,14 @@ func (l *lockServer) RUnlock(args *LockArgs, reply *bool) error {
 func (l *lockServer) ForceUnlock(args *LockArgs, reply *bool) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if err := l.validateLockArgs(args); err != nil {
+	if err := args.IsAuthenticated(); err != nil {
 		return err
 	}
-	if len(args.UID) != 0 {
-		return fmt.Errorf("ForceUnlock called with non-empty UID: %s", args.UID)
+	if len(args.dsyncLockArgs.UID) != 0 {
+		return fmt.Errorf("ForceUnlock called with non-empty UID: %s", args.dsyncLockArgs.UID)
 	}
-	if _, ok := l.lockMap[args.Name]; ok { // Only clear lock when set
-		delete(l.lockMap, args.Name) // Remove the lock (irrespective of write or read lock)
+	if _, ok := l.lockMap[args.dsyncLockArgs.Resource]; ok { // Only clear lock when set
+		delete(l.lockMap, args.dsyncLockArgs.Resource) // Remove the lock (irrespective of write or read lock)
 	}
 	*reply = true
 	return nil
@@ -237,21 +217,21 @@ func (l *lockServer) ForceUnlock(args *LockArgs, reply *bool) error {
 func (l *lockServer) Expired(args *LockArgs, reply *bool) error {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if err := l.validateLockArgs(args); err != nil {
+	if err := args.IsAuthenticated(); err != nil {
 		return err
 	}
 	// Lock found, proceed to verify if belongs to given uid.
-	if lri, ok := l.lockMap[args.Name]; ok {
+	if lri, ok := l.lockMap[args.dsyncLockArgs.Resource]; ok {
 		// Check whether uid is still active
 		for _, entry := range lri {
-			if entry.uid == args.UID {
+			if entry.uid == args.dsyncLockArgs.UID {
 				*reply = false // When uid found, lock is still active so return not expired.
 				return nil     // When uid found *reply is set to true.
 			}
 		}
 	}
-	// When we get here lock is no longer active due to either args.Name
-	// being absent from map or uid not found for given args.Name
+	// When we get here lock is no longer active due to either args.dsyncLockArgs.Resource
+	// being absent from map or uid not found for given args.dsyncLockArgs.Resource
 	*reply = true
 	return nil
 }
@@ -276,19 +256,24 @@ func (l *lockServer) lockMaintenance(interval time.Duration) {
 	nlripLongLived := getLongLivedLocks(l.lockMap, interval)
 	l.mutex.Unlock()
 
+	serverCred := serverConfig.GetCredential()
 	// Validate if long lived locks are indeed clean.
 	for _, nlrip := range nlripLongLived {
 		// Initialize client based on the long live locks.
-		c := newRPCClient(nlrip.lri.node, nlrip.lri.rpcPath, isSSL())
-
-		var expired bool
+		c := newLockRPCClient(authConfig{
+			accessKey:       serverCred.AccessKey,
+			secretKey:       serverCred.SecretKey,
+			serverAddr:      nlrip.lri.node,
+			serviceEndpoint: nlrip.lri.rpcPath,
+			secureConn:      isSSL(),
+			serviceName:     "Dsync",
+		})
 
 		// Call back to original server verify whether the lock is still active (based on name & uid)
-		c.Call("Dsync.Expired", &LockArgs{
-			Name: nlrip.name,
-			UID:  nlrip.lri.uid,
-		}, &expired)
-		c.Close() // Close the connection regardless of the call response.
+		expired, _ := c.Expired(dsync.LockArgs{UID: nlrip.lri.uid, Resource: nlrip.name})
+
+		// Close the connection regardless of the call response.
+		c.rpcClient.Close()
 
 		// For successful response, verify if lock is indeed active or stale.
 		if expired {
