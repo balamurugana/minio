@@ -22,6 +22,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/minio/dsync"
 )
 
 // Helper function to test equality of locks (without taking timing info into account)
@@ -49,19 +51,24 @@ func createLockTestServer(t *testing.T) (string, *lockServer, string) {
 	}
 
 	locker := &lockServer{
-		loginServer: loginServer{},
-		rpcPath:     "rpc-path",
-		mutex:       sync.Mutex{},
-		lockMap:     make(map[string][]lockRequesterInfo),
+		AuthRPCServer: AuthRPCServer{},
+		rpcPath:       "rpc-path",
+		mutex:         sync.Mutex{},
+		lockMap:       make(map[string][]lockRequesterInfo),
 	}
 	creds := serverConfig.GetCredential()
-	loginArgs := RPCLoginArgs{Username: creds.AccessKey, Password: creds.SecretKey}
-	loginReply := RPCLoginReply{}
-	err = locker.LoginHandler(&loginArgs, &loginReply)
+	loginArgs := LoginRPCArgs{
+		Username:    creds.AccessKey,
+		Password:    creds.SecretKey,
+		Version:     Version,
+		RequestTime: time.Now().UTC(),
+	}
+	loginReply := LoginRPCReply{}
+	err = locker.Login(&loginArgs, &loginReply)
 	if err != nil {
 		t.Fatalf("Failed to login to lock server - %v", err)
 	}
-	token := loginReply.Token
+	token := loginReply.AuthToken
 
 	return testPath, locker, token
 }
@@ -73,14 +80,14 @@ func TestLockRpcServerLock(t *testing.T) {
 	testPath, locker, token := createLockTestServer(t)
 	defer removeAll(testPath)
 
-	la := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "0123-4567",
-	}
+	la := newLockArgs(dsync.LockArgs{
+		UID:             "0123-4567",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la.SetAuthToken(token)
+	la.SetRequestTime(timestamp)
 
 	// Claim a lock
 	var result bool
@@ -107,14 +114,15 @@ func TestLockRpcServerLock(t *testing.T) {
 	}
 
 	// Try to claim same lock again (will fail)
-	la2 := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "89ab-cdef",
-	}
+	la2 := newLockArgs(dsync.LockArgs{
+		UID:             "89ab-cdef",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la2.SetAuthToken(token)
+	la2.SetRequestTime(timestamp)
+
 	err = locker.Lock(&la2, &result)
 	if err != nil {
 		t.Errorf("Expected %#v, got %#v", nil, err)
@@ -132,14 +140,14 @@ func TestLockRpcServerUnlock(t *testing.T) {
 	testPath, locker, token := createLockTestServer(t)
 	defer removeAll(testPath)
 
-	la := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "0123-4567",
-	}
+	la := newLockArgs(dsync.LockArgs{
+		UID:             "0123-4567",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la.SetAuthToken(token)
+	la.SetRequestTime(timestamp)
 
 	// First test return of error when attempting to unlock a lock that does not exist
 	var result bool
@@ -180,14 +188,14 @@ func TestLockRpcServerRLock(t *testing.T) {
 	testPath, locker, token := createLockTestServer(t)
 	defer removeAll(testPath)
 
-	la := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "0123-4567",
-	}
+	la := newLockArgs(dsync.LockArgs{
+		UID:             "0123-4567",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la.SetAuthToken(token)
+	la.SetRequestTime(timestamp)
 
 	// Claim a lock
 	var result bool
@@ -214,14 +222,15 @@ func TestLockRpcServerRLock(t *testing.T) {
 	}
 
 	// Try to claim same again (will succeed)
-	la2 := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "89ab-cdef",
-	}
+	la2 := newLockArgs(dsync.LockArgs{
+		UID:             "89ab-cdef",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la2.SetAuthToken(token)
+	la2.SetRequestTime(timestamp)
+
 	err = locker.RLock(&la2, &result)
 	if err != nil {
 		t.Errorf("Expected %#v, got %#v", nil, err)
@@ -239,14 +248,14 @@ func TestLockRpcServerRUnlock(t *testing.T) {
 	testPath, locker, token := createLockTestServer(t)
 	defer removeAll(testPath)
 
-	la := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "0123-4567",
-	}
+	la := newLockArgs(dsync.LockArgs{
+		UID:             "0123-4567",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la.SetAuthToken(token)
+	la.SetRequestTime(timestamp)
 
 	// First test return of error when attempting to unlock a read-lock that does not exist
 	var result bool
@@ -263,14 +272,15 @@ func TestLockRpcServerRUnlock(t *testing.T) {
 		t.Errorf("Expected %#v, got %#v", true, result)
 	}
 
-	la2 := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "89ab-cdef",
-	}
+	// Try to claim same again (will succeed)
+	la2 := newLockArgs(dsync.LockArgs{
+		UID:             "89ab-cdef",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la2.SetAuthToken(token)
+	la2.SetRequestTime(timestamp)
 
 	// ... and create a second lock on same resource
 	err = locker.RLock(&la2, &result)
@@ -328,14 +338,14 @@ func TestLockRpcServerForceUnlock(t *testing.T) {
 	testPath, locker, token := createLockTestServer(t)
 	defer removeAll(testPath)
 
-	laForce := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "1234-5678",
-	}
+	laForce := newLockArgs(dsync.LockArgs{
+		UID:             "1234-5678",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	laForce.SetAuthToken(token)
+	laForce.SetRequestTime(timestamp)
 
 	// First test that UID should be empty
 	var result bool
@@ -345,20 +355,20 @@ func TestLockRpcServerForceUnlock(t *testing.T) {
 	}
 
 	// Then test force unlock of a lock that does not exist (not returning an error)
-	laForce.UID = ""
+	laForce.dsyncLockArgs.UID = ""
 	err = locker.ForceUnlock(&laForce, &result)
 	if err != nil {
 		t.Errorf("Expected no error, got %#v", err)
 	}
 
-	la := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "0123-4567",
-	}
+	la := newLockArgs(dsync.LockArgs{
+		UID:             "0123-4567",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la.SetAuthToken(token)
+	la.SetRequestTime(timestamp)
 
 	// Create lock ... (so that we can force unlock)
 	err = locker.Lock(&la, &result)
@@ -395,14 +405,14 @@ func TestLockRpcServerExpired(t *testing.T) {
 	testPath, locker, token := createLockTestServer(t)
 	defer removeAll(testPath)
 
-	la := LockArgs{
-		Name:      "name",
-		Token:     token,
-		Timestamp: timestamp,
-		Node:      "node",
-		RPCPath:   "rpc-path",
-		UID:       "0123-4567",
-	}
+	la := newLockArgs(dsync.LockArgs{
+		UID:             "0123-4567",
+		Resource:        "name",
+		ServerAddr:      "node",
+		ServiceEndpoint: "rpc-path",
+	})
+	la.SetAuthToken(token)
+	la.SetRequestTime(timestamp)
 
 	// Unknown lock at server will return expired = true
 	var expired bool
