@@ -29,8 +29,8 @@ import (
 )
 
 type networkStorage struct {
-	rpcClient         *AuthRPCClient
 	networkIOErrCount int32 // ref: https://golang.org/pkg/sync/atomic/#pkg-note-BUG
+	rpcClient         *AuthRPCClient
 }
 
 const (
@@ -117,12 +117,13 @@ func newStorageRPC(ep *url.URL) (StorageAPI, error) {
 
 	storageAPI := &networkStorage{
 		rpcClient: newAuthRPCClient(authConfig{
-			accessKey:       accessKey,
-			secretKey:       secretKey,
-			serverAddr:      rpcAddr,
-			serviceEndpoint: rpcPath,
-			secureConn:      isSSL(),
-			serviceName:     "Storage",
+			accessKey:        accessKey,
+			secretKey:        secretKey,
+			serverAddr:       rpcAddr,
+			serviceEndpoint:  rpcPath,
+			secureConn:       isSSL(),
+			serviceName:      "Storage",
+			disableReconnect: true,
 		}),
 	}
 
@@ -146,7 +147,9 @@ const maxAllowedNetworkIOError = 256 // maximum allowed network IOError.
 
 // Init - this is a dummy call to make interface compatible.
 func (n *networkStorage) Init() error {
-	return nil
+	// Attempt a login to reconnect.
+	err := n.rpcClient.Login()
+	return toStorageErr(err)
 }
 
 // Closes the underlying RPC connection.

@@ -35,7 +35,7 @@ const defaultDialTimeout = 3 * time.Second
 
 // RPCClient is a reconnectable RPC client on Call().
 type RPCClient struct {
-	mutex           sync.Mutex  // Mutex to lock this object.
+	sync.Mutex                  // Mutex to lock net rpc client.
 	netRPCClient    *rpc.Client // Base RPC client to make any RPC call.
 	serverAddr      string      // RPC server address.
 	serviceEndpoint string      // Endpoint on the server to make any RPC call.
@@ -46,7 +46,6 @@ type RPCClient struct {
 // It does lazy connect to the remote endpoint on Call().
 func newRPCClient(serverAddr, serviceEndpoint string, secureConn bool) *RPCClient {
 	return &RPCClient{
-		mutex:           sync.Mutex{},
 		serverAddr:      serverAddr,
 		serviceEndpoint: serviceEndpoint,
 		secureConn:      secureConn,
@@ -56,8 +55,8 @@ func newRPCClient(serverAddr, serviceEndpoint string, secureConn bool) *RPCClien
 // dial tries to establish a connection to serverAddr in a safe manner.
 // If there is a valid rpc.Cliemt, it returns that else creates a new one.
 func (rpcClient *RPCClient) dial() (netRPCClient *rpc.Client, err error) {
-	rpcClient.mutex.Lock()
-	defer rpcClient.mutex.Unlock()
+	rpcClient.Lock()
+	defer rpcClient.Unlock()
 
 	// Nothing to do as we already have valid connection.
 	if rpcClient.netRPCClient != nil {
@@ -148,18 +147,18 @@ func (rpcClient *RPCClient) Call(serviceMethod string, args interface{}, reply i
 
 // Close closes underlying rpc.Client.
 func (rpcClient *RPCClient) Close() error {
-	rpcClient.mutex.Lock()
+	rpcClient.Lock()
 
 	if rpcClient.netRPCClient != nil {
 		// We make a copy of rpc.Client and unlock it immediately so that another
 		// goroutine could try to dial or close in parallel.
 		netRPCClient := rpcClient.netRPCClient
 		rpcClient.netRPCClient = nil
-		rpcClient.mutex.Unlock()
+		rpcClient.Unlock()
 
 		return netRPCClient.Close()
 	}
 
-	rpcClient.mutex.Unlock()
+	rpcClient.Unlock()
 	return nil
 }

@@ -28,35 +28,35 @@ const globalAuthRPCRetryThreshold = 1
 
 // authConfig requires to make new AuthRPCClient.
 type authConfig struct {
-	accessKey       string // Access key (like username) for authentication.
-	secretKey       string // Secret key (like Password) for authentication.
-	serverAddr      string // RPC server address.
-	serviceEndpoint string // Endpoint on the server to make any RPC call.
-	secureConn      bool   // Make TLS connection to RPC server or not.
-	serviceName     string // Service name of auth server.
+	accessKey        string // Access key (like username) for authentication.
+	secretKey        string // Secret key (like Password) for authentication.
+	serverAddr       string // RPC server address.
+	serviceEndpoint  string // Endpoint on the server to make any RPC call.
+	secureConn       bool   // Make TLS connection to RPC server or not.
+	serviceName      string // Service name of auth server.
+	disableReconnect bool   // Boolean to indicate if we should disable auto reconnect.
 }
 
 // AuthRPCClient is a authenticated RPC client which does authentication before doing Call().
 type AuthRPCClient struct {
-	mutex     sync.Mutex // Mutex to lock this object.
-	rpcClient *RPCClient // Reconnectable RPC client to make any RPC call.
-	config    authConfig // Authentication configuration information.
-	authToken string     // Authentication token.
+	sync.Mutex            // Mutex to lock this object.
+	rpcClient  *RPCClient // Reconnectable RPC client to make any RPC call.
+	config     authConfig // Authentication configuration information.
+	authToken  string     // Authentication token.
 }
 
 // newAuthRPCClient - returns a JWT based authenticated (go) rpc client, which does automatic reconnect.
 func newAuthRPCClient(config authConfig) *AuthRPCClient {
 	return &AuthRPCClient{
-		mutex:     sync.Mutex{},
 		rpcClient: newRPCClient(config.serverAddr, config.serviceEndpoint, config.secureConn),
 		config:    config,
 	}
 }
 
-// login - a jwt based authentication is performed with rpc server.
-func (authClient *AuthRPCClient) login() (err error) {
-	authClient.mutex.Lock()
-	defer authClient.mutex.Unlock()
+// Login - a jwt based authentication is performed with rpc server.
+func (authClient *AuthRPCClient) Login() (err error) {
+	authClient.Lock()
+	defer authClient.Unlock()
 
 	// Return if already logged in.
 	if authClient.authToken != "" {
@@ -72,7 +72,8 @@ func (authClient *AuthRPCClient) login() (err error) {
 	}
 
 	reply := LoginRPCReply{}
-	if err = authClient.rpcClient.Call(authClient.config.serviceName+loginMethodName, &args, &reply); err != nil {
+	serviceMethod := authClient.config.serviceName + loginMethodName
+	if err = authClient.rpcClient.Call(serviceMethod, &args, &reply); err != nil {
 		return err
 	}
 
@@ -88,7 +89,7 @@ func (authClient *AuthRPCClient) call(serviceMethod string, args interface {
 	SetRequestTime(requestTime time.Time)
 }, reply interface{}) (err error) {
 	// On successful login, execute RPC call.
-	if err = authClient.login(); err == nil {
+	if err = authClient.Login(); err == nil {
 		// Set token and timestamp before the rpc call.
 		args.SetAuthToken(authClient.authToken)
 		args.SetRequestTime(time.Now().UTC())
@@ -111,9 +112,12 @@ func (authClient *AuthRPCClient) Call(serviceMethod string, args interface {
 			// As connection at server side is closed, close the rpc client.
 			authClient.Close()
 
-			// Retry until threshold reaches.
-			if i < globalAuthRPCRetryThreshold {
-				continue
+			// Check if reconnecting is disabled.
+			if !authClient.config.disableReconnect {
+				// Retry until threshold reaches.
+				if i < globalAuthRPCRetryThreshold {
+					continue
+				}
 			}
 		}
 		break
@@ -123,8 +127,8 @@ func (authClient *AuthRPCClient) Call(serviceMethod string, args interface {
 
 // Close closes underlying RPC Client.
 func (authClient *AuthRPCClient) Close() error {
-	authClient.mutex.Lock()
-	defer authClient.mutex.Unlock()
+	authClient.Lock()
+	defer authClient.Unlock()
 
 	authClient.authToken = ""
 	return authClient.rpcClient.Close()

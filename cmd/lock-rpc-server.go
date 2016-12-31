@@ -273,7 +273,7 @@ func (l *lockServer) lockMaintenance(interval time.Duration) {
 		expired, _ := c.Expired(dsync.LockArgs{UID: nlrip.lri.uid, Resource: nlrip.name})
 
 		// Close the connection regardless of the call response.
-		c.Close()
+		c.rpcClient.Close()
 
 		// For successful response, verify if lock is indeed active or stale.
 		if expired {
