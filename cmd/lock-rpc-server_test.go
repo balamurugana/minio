@@ -449,6 +449,12 @@ func TestLockServers(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		return
 	}
+
+	currentIsDistXL := globalIsDistXL
+	defer func() {
+		globalIsDistXL = currentIsDistXL
+	}()
+
 	globalMinioHost = ""
 	testCases := []struct {
 		isDistXL         bool
