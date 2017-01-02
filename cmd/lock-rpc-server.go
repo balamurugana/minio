@@ -28,9 +28,16 @@ import (
 	"github.com/minio/dsync"
 )
 
-const lockRPCPath = "/minio/lock"
-const lockMaintenanceLoop = 1 * time.Minute
-const lockCheckValidityInterval = 2 * time.Minute
+const (
+	// Lock rpc server endpoint.
+	lockRPCPath = "/minio/lock"
+
+	// Lock maintenance interval.
+	lockMaintenanceInterval = 1 * time.Minute // 1 minute.
+
+	// Lock validity check interval.
+	lockValidityCheckInterval = 2 * time.Minute // 2 minutes.
+)
 
 // lockRequesterInfo stores various info from the client for each lock that is requested
 type lockRequesterInfo struct {
@@ -55,37 +62,55 @@ type lockServer struct {
 	lockMap map[string][]lockRequesterInfo
 }
 
+// Start lock maintenance from all lock servers.
+func startLockMaintainence(lockServers []*lockServer) {
+	for _, locker := range lockServers {
+		// Start loop for stale lock maintenance
+		go func(lk *lockServer) {
+			// Initialize a new ticker with a minute between each ticks.
+			ticker := time.NewTicker(lockMaintenanceInterval)
+
+			// Start with random sleep time, so as to avoid "synchronous checks" between servers
+			time.Sleep(time.Duration(rand.Float64() * float64(lockMaintenanceInterval)))
+			for {
+				// Verifies every minute for locks held more than 2minutes.
+				select {
+				case <-ticker.C:
+					lk.lockMaintenance(lockValidityCheckInterval)
+				case <-globalServiceDoneCh:
+					// Stop the timer.
+					ticker.Stop()
+				}
+			}
+		}(locker)
+	}
+}
+
 // Register distributed NS lock handlers.
 func registerDistNSLockRouter(mux *router.Router, serverConfig serverCmdConfig) error {
+	// Initialize a new set of lock servers.
 	lockServers := newLockServers(serverConfig)
+
+	// Start lock maintenance from all lock servers.
+	startLockMaintainence(lockServers)
+
+	// Register initialized lock servers to their respective rpc endpoints.
 	return registerStorageLockers(mux, lockServers)
 }
 
 // Create one lock server for every local storage rpc server.
 func newLockServers(srvConfig serverCmdConfig) (lockServers []*lockServer) {
 	for _, ep := range srvConfig.endpoints {
-		// Not local storage move to the next node.
-		if !isLocalStorage(ep) {
-			continue
-		}
-
-		// Create handler for lock RPCs
-		locker := &lockServer{
-			rpcPath: getPath(ep),
-			mutex:   sync.Mutex{},
-			lockMap: make(map[string][]lockRequesterInfo),
-		}
-
-		// Start loop for stale lock maintenance
-		go func() {
-			// Start with random sleep time, so as to avoid "synchronous checks" between servers
-			time.Sleep(time.Duration(rand.Float64() * float64(lockMaintenanceLoop)))
-			for {
-				time.Sleep(lockMaintenanceLoop)
-				locker.lockMaintenance(lockCheckValidityInterval)
+		// Initialize new lock server for each local node.
+		if isLocalStorage(ep) {
+			// Create handler for lock RPCs
+			locker := &lockServer{
+				rpcPath: getPath(ep),
+				mutex:   sync.Mutex{},
+				lockMap: make(map[string][]lockRequesterInfo),
 			}
-		}()
-		lockServers = append(lockServers, locker)
+			lockServers = append(lockServers, locker)
+		}
 	}
 	return lockServers
 }
@@ -94,8 +119,7 @@ func newLockServers(srvConfig serverCmdConfig) (lockServers []*lockServer) {
 func registerStorageLockers(mux *router.Router, lockServers []*lockServer) error {
 	for _, lockServer := range lockServers {
 		lockRPCServer := rpc.NewServer()
-		err := lockRPCServer.RegisterName("Dsync", lockServer)
-		if err != nil {
+		if err := lockRPCServer.RegisterName("Dsync", lockServer); err != nil {
 			return traceError(err)
 		}
 		lockRouter := mux.PathPrefix(reservedBucket).Subrouter()

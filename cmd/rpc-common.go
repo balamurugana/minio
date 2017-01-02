@@ -60,6 +60,7 @@ func (args AuthRPCArgs) IsAuthenticated() error {
 		return errInvalidToken
 	}
 
+	// Check if the request time is within the allowed skew limit.
 	if !isRequestTimeAllowed(args.RequestTime) {
 		return errServerTimeMismatch
 	}
