@@ -204,15 +204,15 @@ func UnstartedTestServer(t TestErrHandler, instanceType string) TestServer {
 	testServer.AccessKey = credentials.AccessKey
 	testServer.SecretKey = credentials.SecretKey
 
-	objLayer, storageDisks, err := initObjectLayer(testServer.Disks)
+	objLayer, _, err := initObjectLayer(testServer.Disks)
 	if err != nil {
 		t.Fatalf("Failed obtaining Temp Backend: <ERROR> %s", err)
 	}
 
 	srvCmdCfg := serverCmdConfig{
-		endpoints:    testServer.Disks,
-		storageDisks: storageDisks,
+		endpoints: testServer.Disks,
 	}
+
 	httpHandler, err := configureServerHandler(
 		srvCmdCfg,
 	)
@@ -402,7 +402,7 @@ func StartTestPeersRPCServer(t TestErrHandler, instanceType string) TestServer {
 	testRPCServer.SecretKey = credentials.SecretKey
 
 	// create temporary backend for the test server.
-	objLayer, storageDisks, err := initObjectLayer(endpoints)
+	objLayer, _, err := initObjectLayer(endpoints)
 	if err != nil {
 		t.Fatalf("Failed obtaining Temp Backend: <ERROR> %s", err)
 	}
@@ -413,8 +413,7 @@ func StartTestPeersRPCServer(t TestErrHandler, instanceType string) TestServer {
 	globalObjLayerMutex.Unlock()
 
 	srvCfg := serverCmdConfig{
-		endpoints:    endpoints,
-		storageDisks: storageDisks,
+		endpoints: endpoints,
 	}
 
 	mux := router.NewRouter()
@@ -1594,12 +1593,7 @@ func getRandomDisks(N int) ([]string, error) {
 
 // initObjectLayer - Instantiates object layer and returns it.
 func initObjectLayer(endpoints []*url.URL) (ObjectLayer, []StorageAPI, error) {
-	storageDisks, err := initStorageDisks(endpoints)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	formattedDisks, err := waitForFormatDisks(true, endpoints, storageDisks)
+	formattedDisks, err := waitForFormatDisks(true, endpoints)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1652,12 +1646,11 @@ func prepareNErroredDisks(storageDisks []StorageAPI, offline int, err error, t *
 	}
 
 	for i := 0; i < offline; i++ {
-		storageDisks[i] = &naughtyDisk{disk: &retryStorage{
-			remoteStorage:    storageDisks[i],
-			maxRetryAttempts: 1,
-			retryUnit:        time.Millisecond,
-			retryCap:         time.Millisecond * 10,
-		}, defaultErr: err}
+		storage := storageDisks[i]
+		storageDisks[i] = &naughtyDisk{
+			disk:       storage,
+			defaultErr: err,
+		}
 	}
 	return storageDisks
 }

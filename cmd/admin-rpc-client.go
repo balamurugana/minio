@@ -57,14 +57,14 @@ func (lc localAdminClient) Restart() error {
 func (rc remoteAdminClient) Stop() error {
 	args := AuthRPCArgs{}
 	reply := AuthRPCReply{}
-	return rc.Call("Service.Shutdown", &args, &reply, defaultRetryConfig)
+	return rc.Call("Service.Shutdown", &args, &reply, defaultRetryConfig, nil)
 }
 
 // Restart - Sends restart command to remote server via RPC.
 func (rc remoteAdminClient) Restart() error {
 	args := AuthRPCArgs{}
 	reply := AuthRPCReply{}
-	return rc.Call("Service.Restart", &args, &reply, defaultRetryConfig)
+	return rc.Call("Service.Restart", &args, &reply, defaultRetryConfig, nil)
 }
 
 // adminPeer - represents an entity that implements Stop and Restart methods.

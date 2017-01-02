@@ -31,41 +31,41 @@ func newLockRPCClient(config authConfig) *LockRPCClient {
 // RLock calls read lock RPC.
 func (lockRPCClient *LockRPCClient) RLock(args dsync.LockArgs) (reply bool, err error) {
 	lockArgs := newLockArgs(args)
-	err = lockRPCClient.Call("Dsync.RLock", &lockArgs, &reply, defaultRetryConfig)
+	err = lockRPCClient.Call("Dsync.RLock", &lockArgs, &reply, defaultRetryConfig, nil)
 	return reply, err
 }
 
 // Lock calls write lock RPC.
 func (lockRPCClient *LockRPCClient) Lock(args dsync.LockArgs) (reply bool, err error) {
 	lockArgs := newLockArgs(args)
-	err = lockRPCClient.Call("Dsync.Lock", &lockArgs, &reply, defaultRetryConfig)
+	err = lockRPCClient.Call("Dsync.Lock", &lockArgs, &reply, defaultRetryConfig, nil)
 	return reply, err
 }
 
 // RUnlock calls read unlock RPC.
 func (lockRPCClient *LockRPCClient) RUnlock(args dsync.LockArgs) (reply bool, err error) {
 	lockArgs := newLockArgs(args)
-	err = lockRPCClient.Call("Dsync.RUnlock", &lockArgs, &reply, defaultRetryConfig)
+	err = lockRPCClient.Call("Dsync.RUnlock", &lockArgs, &reply, defaultRetryConfig, nil)
 	return reply, err
 }
 
 // Unlock calls write unlock RPC.
 func (lockRPCClient *LockRPCClient) Unlock(args dsync.LockArgs) (reply bool, err error) {
 	lockArgs := newLockArgs(args)
-	err = lockRPCClient.Call("Dsync.Unlock", &lockArgs, &reply, defaultRetryConfig)
+	err = lockRPCClient.Call("Dsync.Unlock", &lockArgs, &reply, defaultRetryConfig, nil)
 	return reply, err
 }
 
 // ForceUnlock calls force unlock RPC.
 func (lockRPCClient *LockRPCClient) ForceUnlock(args dsync.LockArgs) (reply bool, err error) {
 	lockArgs := newLockArgs(args)
-	err = lockRPCClient.Call("Dsync.ForceUnlock", &lockArgs, &reply, defaultRetryConfig)
+	err = lockRPCClient.Call("Dsync.ForceUnlock", &lockArgs, &reply, defaultRetryConfig, nil)
 	return reply, err
 }
 
 // Expired calls expired RPC.
 func (lockRPCClient *LockRPCClient) Expired(args dsync.LockArgs) (reply bool, err error) {
 	lockArgs := newLockArgs(args)
-	err = lockRPCClient.Call("Dsync.Expired", &lockArgs, &reply, defaultRetryConfig)
+	err = lockRPCClient.Call("Dsync.Expired", &lockArgs, &reply, defaultRetryConfig, nil)
 	return reply, err
 }

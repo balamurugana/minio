@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"path"
 	"sync/atomic"
+	"time"
 
 	"github.com/minio/minio/pkg/disk"
 )
@@ -31,6 +32,8 @@ import (
 type networkStorage struct {
 	networkIOErrCount int32 // ref: https://golang.org/pkg/sync/atomic/#pkg-note-BUG
 	rpcClient         *AuthRPCClient
+	retryCfg          retryConfig
+	retryCBFunc       func() error
 }
 
 const (
@@ -95,8 +98,17 @@ func toStorageErr(err error) error {
 	return err
 }
 
+var defaultStorageRetryConfig = retryConfig{
+	isRetryableErr: func(err error) bool {
+		return err != nil
+	},
+	maxAttempts:  1,
+	timerUnit:    time.Millisecond,
+	timerMaxTime: 5 * time.Millisecond, // 5 milliseconds.
+}
+
 // Initialize new storage rpc client.
-func newStorageRPC(ep *url.URL) (StorageAPI, error) {
+func newStorageRPC(ep *url.URL, rCfg retryConfig) (StorageAPI, error) {
 	if ep == nil {
 		return nil, errInvalidArgument
 	}
@@ -123,11 +135,12 @@ func newStorageRPC(ep *url.URL) (StorageAPI, error) {
 		serviceEndpoint: rpcPath,
 		secureConn:      isSSL(),
 		serviceName:     "Storage",
-		postLoginFunc: func() error {
-			_, err := loadFormat(storageAPI)
-			return err
-		},
 	})
+	storageAPI.retryCfg = rCfg
+	storageAPI.retryCBFunc = func() error {
+		// _, err := loadFormat(storageAPI) (This is commented on purpose)
+		return nil
+	}
 
 	// Returns successfully here.
 	return storageAPI, nil
@@ -147,18 +160,6 @@ func (n *networkStorage) String() string {
 // incoming i/o.
 const maxAllowedNetworkIOError = 256 // maximum allowed network IOError.
 
-// Init - dummy function to make interface compatible.
-func (n *networkStorage) Init() error {
-	return nil
-}
-
-// Closes the underlying RPC connection.
-func (n *networkStorage) Close() (err error) {
-	// Close the underlying connection.
-	err = n.rpcClient.Close()
-	return toStorageErr(err)
-}
-
 // DiskInfo - fetch disk information for a remote disk.
 func (n *networkStorage) DiskInfo() (info disk.Info, err error) {
 	defer func() {
@@ -174,7 +175,7 @@ func (n *networkStorage) DiskInfo() (info disk.Info, err error) {
 	}
 
 	args := AuthRPCArgs{}
-	if err = n.rpcClient.Call("Storage.DiskInfoHandler", &args, &info); err != nil {
+	if err = n.rpcClient.Call("Storage.DiskInfoHandler", &args, &info, n.retryCfg, n.retryCBFunc); err != nil {
 		return disk.Info{}, toStorageErr(err)
 	}
 	return info, nil
@@ -196,7 +197,7 @@ func (n *networkStorage) MakeVol(volume string) (err error) {
 
 	reply := AuthRPCReply{}
 	args := GenericVolArgs{Vol: volume}
-	if err := n.rpcClient.Call("Storage.MakeVolHandler", &args, &reply); err != nil {
+	if err := n.rpcClient.Call("Storage.MakeVolHandler", &args, &reply, n.retryCfg, n.retryCBFunc); err != nil {
 		return toStorageErr(err)
 	}
 	return nil
@@ -217,7 +218,7 @@ func (n *networkStorage) ListVols() (vols []VolInfo, err error) {
 	}
 
 	ListVols := ListVolsReply{}
-	err = n.rpcClient.Call("Storage.ListVolsHandler", &AuthRPCArgs{}, &ListVols)
+	err = n.rpcClient.Call("Storage.ListVolsHandler", &AuthRPCArgs{}, &ListVols, n.retryCfg, n.retryCBFunc)
 	if err != nil {
 		return nil, toStorageErr(err)
 	}
@@ -239,7 +240,7 @@ func (n *networkStorage) StatVol(volume string) (volInfo VolInfo, err error) {
 	}
 
 	args := GenericVolArgs{Vol: volume}
-	if err = n.rpcClient.Call("Storage.StatVolHandler", &args, &volInfo); err != nil {
+	if err = n.rpcClient.Call("Storage.StatVolHandler", &args, &volInfo, n.retryCfg, n.retryCBFunc); err != nil {
 		return VolInfo{}, toStorageErr(err)
 	}
 	return volInfo, nil
@@ -261,7 +262,7 @@ func (n *networkStorage) DeleteVol(volume string) (err error) {
 
 	reply := AuthRPCReply{}
 	args := GenericVolArgs{Vol: volume}
-	if err := n.rpcClient.Call("Storage.DeleteVolHandler", &args, &reply); err != nil {
+	if err := n.rpcClient.Call("Storage.DeleteVolHandler", &args, &reply, n.retryCfg, n.retryCBFunc); err != nil {
 		return toStorageErr(err)
 	}
 	return nil
@@ -286,7 +287,7 @@ func (n *networkStorage) PrepareFile(volume, path string, length int64) (err err
 		Vol:  volume,
 		Path: path,
 		Size: length,
-	}, &reply); err != nil {
+	}, &reply, n.retryCfg, n.retryCBFunc); err != nil {
 		return toStorageErr(err)
 	}
 	return nil
@@ -311,7 +312,7 @@ func (n *networkStorage) AppendFile(volume, path string, buffer []byte) (err err
 		Vol:    volume,
 		Path:   path,
 		Buffer: buffer,
-	}, &reply); err != nil {
+	}, &reply, n.retryCfg, n.retryCBFunc); err != nil {
 		return toStorageErr(err)
 	}
 	return nil
@@ -334,7 +335,7 @@ func (n *networkStorage) StatFile(volume, path string) (fileInfo FileInfo, err e
 	if err = n.rpcClient.Call("Storage.StatFileHandler", &StatFileArgs{
 		Vol:  volume,
 		Path: path,
-	}, &fileInfo); err != nil {
+	}, &fileInfo, n.retryCfg, n.retryCBFunc); err != nil {
 		return FileInfo{}, toStorageErr(err)
 	}
 	return fileInfo, nil
@@ -360,7 +361,7 @@ func (n *networkStorage) ReadAll(volume, path string) (buf []byte, err error) {
 	if err = n.rpcClient.Call("Storage.ReadAllHandler", &ReadAllArgs{
 		Vol:  volume,
 		Path: path,
-	}, &buf); err != nil {
+	}, &buf, n.retryCfg, n.retryCBFunc); err != nil {
 		return nil, toStorageErr(err)
 	}
 	return buf, nil
@@ -393,7 +394,7 @@ func (n *networkStorage) ReadFile(volume string, path string, offset int64, buff
 		Path:   path,
 		Offset: offset,
 		Buffer: buffer,
-	}, &result)
+	}, &result, n.retryCfg, n.retryCBFunc)
 
 	// Copy results to buffer.
 	copy(buffer, result)
@@ -419,7 +420,7 @@ func (n *networkStorage) ListDir(volume, path string) (entries []string, err err
 	if err = n.rpcClient.Call("Storage.ListDirHandler", &ListDirArgs{
 		Vol:  volume,
 		Path: path,
-	}, &entries); err != nil {
+	}, &entries, n.retryCfg, n.retryCBFunc); err != nil {
 		return nil, toStorageErr(err)
 	}
 	// Return successfully unmarshalled results.
@@ -444,7 +445,7 @@ func (n *networkStorage) DeleteFile(volume, path string) (err error) {
 	if err = n.rpcClient.Call("Storage.DeleteFileHandler", &DeleteFileArgs{
 		Vol:  volume,
 		Path: path,
-	}, &reply); err != nil {
+	}, &reply, n.retryCfg, n.retryCBFunc); err != nil {
 		return toStorageErr(err)
 	}
 	return nil
@@ -470,7 +471,7 @@ func (n *networkStorage) RenameFile(srcVolume, srcPath, dstVolume, dstPath strin
 		SrcPath: srcPath,
 		DstVol:  dstVolume,
 		DstPath: dstPath,
-	}, &reply); err != nil {
+	}, &reply, n.retryCfg, n.retryCBFunc); err != nil {
 		return toStorageErr(err)
 	}
 	return nil

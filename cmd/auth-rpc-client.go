@@ -24,34 +24,34 @@ import (
 
 // authConfig requires to make new AuthRPCClient.
 type authConfig struct {
-	accessKey       string       // Access key (like username) for authentication.
-	secretKey       string       // Secret key (like Password) for authentication.
-	serverAddr      string       // RPC server address.
-	serviceEndpoint string       // Endpoint on the server to make any RPC call.
-	secureConn      bool         // Make TLS connection to RPC server or not.
-	serviceName     string       // Service name of auth server.
-	postLoginFunc   func() error // Callback function to be called on successful login.
+	accessKey       string // Access key (like username) for authentication.
+	secretKey       string // Secret key (like Password) for authentication.
+	serverAddr      string // RPC server address.
+	serviceEndpoint string // Endpoint on the server to make any RPC call.
+	secureConn      bool   // Make TLS connection to RPC server or not.
+	serviceName     string // Service name of auth server.
 }
 
 // retryConfig sets configuration parameters to control retry on RPC call failure.
 type retryConfig struct {
-	// errorCheckFunc is called when RPC call is not successful.
-	// If the function returns true, the RPC call is tried again for execution.
-	retryCheckFunc func(error) bool
+	// isRetryableErr is called when RPC call is not successful.
+	// If the function returns true, the RPC call is tried again.
+	isRetryableErr func(error) bool
 
-	// Maximum retry attempt to be made.
-	maxRetry int
+	// Maximum retry attempts to be made.
+	maxAttempts int
 
 	// RetryTimer parameters.
-	retryTimerUnit    time.Duration
-	retryTimerMaxTime time.Duration
+	timerUnit    time.Duration
+	timerMaxTime time.Duration
 }
 
+// Default retry configuration.
 var defaultRetryConfig = retryConfig{
-	retryCheckFunc:    func(err error) bool { return err == rpc.ErrShutdown },
-	maxRetry:          1,
-	retryTimerUnit:    time.Second,
-	retryTimerMaxTime: 30 * time.Second,
+	isRetryableErr: func(err error) bool { return err == rpc.ErrShutdown },
+	maxAttempts:    1,
+	timerUnit:      time.Second,
+	timerMaxTime:   30 * time.Second,
 }
 
 // AuthRPCClient is a authenticated RPC client which does authentication before doing Call().
@@ -64,8 +64,9 @@ type AuthRPCClient struct {
 
 // newAuthRPCClient - returns a JWT based authenticated (go) rpc client, which does automatic reconnect.
 func newAuthRPCClient(config authConfig) *AuthRPCClient {
+	rpcClient := newRPCClient(config.serverAddr, config.serviceEndpoint, config.secureConn)
 	return &AuthRPCClient{
-		rpcClient: newRPCClient(config.serverAddr, config.serviceEndpoint, config.secureConn),
+		rpcClient: rpcClient,
 		config:    config,
 	}
 }
@@ -104,15 +105,15 @@ func (authClient *AuthRPCClient) login() (err error) {
 func (authClient *AuthRPCClient) call(serviceMethod string, args interface {
 	SetAuthToken(authToken string)
 	SetRequestTime(requestTime time.Time)
-}, reply interface{}) (err error) {
+}, reply interface{}, postLoginFunc func() error) (err error) {
 	// On successful login, execute RPC call.
 	if err = authClient.login(); err != nil {
 		return err
 	}
 
 	// Call postLoginFunc() if available.
-	if authClient.config.postLoginFunc != nil {
-		if err = authClient.config.postLoginFunc(); err != nil {
+	if postLoginFunc != nil {
+		if err = postLoginFunc(); err != nil {
 			return err
 		}
 	}
@@ -134,30 +135,37 @@ func (authClient *AuthRPCClient) Call(serviceMethod string,
 		SetRequestTime(requestTime time.Time)
 	},
 	reply interface{},
-	retryConf retryConfig) (err error) {
+	retryCfg retryConfig,
+	retryCBFunc func() error,
+) (err error) {
+
+	// Allocate a done channel for managing timer routine.
 	doneCh := make(chan struct{})
 	defer close(doneCh)
-	for i := range newRetryTimer(retryConf.retryTimerUnit, retryConf.retryTimerMaxTime, MaxJitter, doneCh) {
-		if err = authClient.call(serviceMethod, args, reply); err == nil {
+
+	for i := range newRetryTimer(retryCfg.timerUnit, retryCfg.timerMaxTime, MaxJitter, doneCh) {
+		if err = authClient.call(serviceMethod, args, reply, retryCBFunc); err == nil {
+			// Upon success break out and return success.
 			break
 		}
 
 		var retry bool
-		// Call retryCheckFunc if available.
-		if retryConf.retryCheckFunc != nil {
-			retry = retryConf.retryCheckFunc(err)
+		// Call isRetryableErr if available.
+		if retryCfg.isRetryableErr != nil {
+			retry = retryCfg.isRetryableErr(err)
 		}
 
-		// Do not continue if no retry.
+		// Do not continue if not a retryable error.
 		if !retry {
 			break
 		}
 
-		// Close the rpc client so that it will do fresh login on next RPC call.
+		// Close the rpc client so that we will
+		// reconnect with fresh login with our next attempt.
 		authClient.Close()
 
-		// Do not continue if maximum retry count is reached.
-		if i >= retryConf.maxRetry {
+		// Do not continue if maximum retry attempts has reached.
+		if i >= retryCfg.maxAttempts {
 			break
 		}
 	}
