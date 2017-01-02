@@ -22,19 +22,36 @@ import (
 	"time"
 )
 
-// Attempt to retry only this many number of times before
-// giving up on the remote RPC entirely.
-const globalAuthRPCRetryThreshold = 1
-
 // authConfig requires to make new AuthRPCClient.
 type authConfig struct {
-	accessKey        string // Access key (like username) for authentication.
-	secretKey        string // Secret key (like Password) for authentication.
-	serverAddr       string // RPC server address.
-	serviceEndpoint  string // Endpoint on the server to make any RPC call.
-	secureConn       bool   // Make TLS connection to RPC server or not.
-	serviceName      string // Service name of auth server.
-	disableReconnect bool   // Disable reconnect on failure or not.
+	accessKey       string       // Access key (like username) for authentication.
+	secretKey       string       // Secret key (like Password) for authentication.
+	serverAddr      string       // RPC server address.
+	serviceEndpoint string       // Endpoint on the server to make any RPC call.
+	secureConn      bool         // Make TLS connection to RPC server or not.
+	serviceName     string       // Service name of auth server.
+	postLoginFunc   func() error // Callback function to be called on successful login.
+}
+
+// retryConfig sets configuration parameters to control retry on RPC call failure.
+type retryConfig struct {
+	// errorCheckFunc is called when RPC call is not successful.
+	// If the function returns true, the RPC call is tried again for execution.
+	retryCheckFunc func(error) bool
+
+	// Maximum retry attempt to be made.
+	maxRetry int
+
+	// RetryTimer parameters.
+	retryTimerUnit    time.Duration
+	retryTimerMaxTime time.Duration
+}
+
+var defaultRetryConfig = retryConfig{
+	retryCheckFunc:    func(err error) bool { return err == rpc.ErrShutdown },
+	maxRetry:          1,
+	retryTimerUnit:    time.Second,
+	retryTimerMaxTime: 30 * time.Second,
 }
 
 // AuthRPCClient is a authenticated RPC client which does authentication before doing Call().
@@ -53,8 +70,8 @@ func newAuthRPCClient(config authConfig) *AuthRPCClient {
 	}
 }
 
-// Login - a jwt based authentication is performed with rpc server.
-func (authClient *AuthRPCClient) Login() (err error) {
+// login - a jwt based authentication is performed with rpc server.
+func (authClient *AuthRPCClient) login() (err error) {
 	authClient.Lock()
 	defer authClient.Unlock()
 
@@ -89,39 +106,62 @@ func (authClient *AuthRPCClient) call(serviceMethod string, args interface {
 	SetRequestTime(requestTime time.Time)
 }, reply interface{}) (err error) {
 	// On successful login, execute RPC call.
-	if err = authClient.Login(); err == nil {
-		// Set token and timestamp before the rpc call.
-		args.SetAuthToken(authClient.authToken)
-		args.SetRequestTime(time.Now().UTC())
-
-		// Do RPC call.
-		err = authClient.rpcClient.Call(serviceMethod, args, reply)
+	if err = authClient.login(); err != nil {
+		return err
 	}
-	return err
+
+	// Call postLoginFunc() if available.
+	if authClient.config.postLoginFunc != nil {
+		if err = authClient.config.postLoginFunc(); err != nil {
+			return err
+		}
+	}
+
+	// Make RPC call on successful login.
+
+	// Set token and timestamp before the rpc call.
+	args.SetAuthToken(authClient.authToken)
+	args.SetRequestTime(time.Now().UTC())
+
+	// Do RPC call.
+	return authClient.rpcClient.Call(serviceMethod, args, reply)
 }
 
 // Call executes RPC call till success or globalAuthRPCRetryThreshold on ErrShutdown.
-func (authClient *AuthRPCClient) Call(serviceMethod string, args interface {
-	SetAuthToken(authToken string)
-	SetRequestTime(requestTime time.Time)
-}, reply interface{}) (err error) {
+func (authClient *AuthRPCClient) Call(serviceMethod string,
+	args interface {
+		SetAuthToken(authToken string)
+		SetRequestTime(requestTime time.Time)
+	},
+	reply interface{},
+	retryConf retryConfig) (err error) {
 	doneCh := make(chan struct{})
 	defer close(doneCh)
-	for i := range newRetryTimer(time.Second, 30*time.Second, MaxJitter, doneCh) {
-		if err = authClient.call(serviceMethod, args, reply); err == rpc.ErrShutdown {
-			// As connection at server side is closed, close the rpc client.
-			authClient.Close()
-
-			// Retry if reconnect is not disabled.
-			if !authClient.config.disableReconnect {
-				// Retry until threshold reaches.
-				if i < globalAuthRPCRetryThreshold {
-					continue
-				}
-			}
+	for i := range newRetryTimer(retryConf.retryTimerUnit, retryConf.retryTimerMaxTime, MaxJitter, doneCh) {
+		if err = authClient.call(serviceMethod, args, reply); err == nil {
+			break
 		}
-		break
+
+		var retry bool
+		// Call retryCheckFunc if available.
+		if retryConf.retryCheckFunc != nil {
+			retry = retryConf.retryCheckFunc(err)
+		}
+
+		// Do not continue if no retry.
+		if !retry {
+			break
+		}
+
+		// Close the rpc client so that it will do fresh login on next RPC call.
+		authClient.Close()
+
+		// Do not continue if maximum retry count is reached.
+		if i >= retryConf.maxRetry {
+			break
+		}
 	}
+
 	return err
 }
 

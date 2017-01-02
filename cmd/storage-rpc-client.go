@@ -115,17 +115,19 @@ func newStorageRPC(ep *url.URL) (StorageAPI, error) {
 		}
 	}
 
-	storageAPI := &networkStorage{
-		rpcClient: newAuthRPCClient(authConfig{
-			accessKey:        accessKey,
-			secretKey:        secretKey,
-			serverAddr:       rpcAddr,
-			serviceEndpoint:  rpcPath,
-			secureConn:       isSSL(),
-			serviceName:      "Storage",
-			disableReconnect: true,
-		}),
-	}
+	storageAPI := &networkStorage{}
+	storageAPI.rpcClient = newAuthRPCClient(authConfig{
+		accessKey:       accessKey,
+		secretKey:       secretKey,
+		serverAddr:      rpcAddr,
+		serviceEndpoint: rpcPath,
+		secureConn:      isSSL(),
+		serviceName:     "Storage",
+		postLoginFunc: func() error {
+			_, err := loadFormat(storageAPI)
+			return err
+		},
+	})
 
 	// Returns successfully here.
 	return storageAPI, nil
@@ -145,10 +147,9 @@ func (n *networkStorage) String() string {
 // incoming i/o.
 const maxAllowedNetworkIOError = 256 // maximum allowed network IOError.
 
-// Init - attempts a login to reconnect.
+// Init - dummy function to make interface compatible.
 func (n *networkStorage) Init() error {
-	err := n.rpcClient.Login()
-	return toStorageErr(err)
+	return nil
 }
 
 // Closes the underlying RPC connection.
