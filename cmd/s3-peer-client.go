@@ -88,6 +88,32 @@ func initGlobalS3Peers(eps []*url.URL) {
 	globalS3Peers = makeS3Peers(eps)
 }
 
+func initS3Peers(setup Setup) {
+	var s3PeerList []s3Peer
+	s3PeerList = append(s3PeerList, s3Peer{
+		setup.serverAddr,
+		&localBucketMetaState{ObjectAPI: newObjectLayerFn},
+	})
+
+	cred := setup.cred
+	serviceEndpoint := path.Join(minioReservedBucketPath, s3Path)
+	for _, host := range setup.endpoints.GetRemoteHosts() {
+		s3PeerList = append(s3PeerList, s3Peer{
+			addr: host,
+			bmsClient: &remoteBucketMetaState{newAuthRPCClient(authConfig{
+				accessKey:       cred.AccessKey,
+				secretKey:       cred.SecretKey,
+				serverAddr:      host,
+				serviceEndpoint: serviceEndpoint,
+				secureConn:      setup.secureConn,
+				serviceName:     "S3",
+			})},
+		})
+	}
+
+	globalS3Peers = s3PeerList
+}
+
 // GetPeerClient - fetch BucketMetaState interface by peer address
 func (s3p s3Peers) GetPeerClient(peer string) BucketMetaState {
 	for _, p := range s3p {

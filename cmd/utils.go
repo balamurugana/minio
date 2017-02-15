@@ -30,7 +30,6 @@ import (
 
 	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/mc/pkg/console"
-	"github.com/pkg/profile"
 )
 
 // make a copy of http.Header
@@ -200,28 +199,6 @@ func contains(stringList []string, element string) bool {
 		}
 	}
 	return false
-}
-
-// Starts a profiler returns nil if profiler is not enabled, caller needs to handle this.
-func startProfiler(profiler string) interface {
-	Stop()
-} {
-	// Enable profiler if ``_MINIO_PROFILER`` is set. Supported options are [cpu, mem, block].
-	switch profiler {
-	case "cpu":
-		return profile.Start(profile.CPUProfile, profile.NoShutdownHook)
-	case "mem":
-		return profile.Start(profile.MemProfile, profile.NoShutdownHook)
-	case "block":
-		return profile.Start(profile.BlockProfile, profile.NoShutdownHook)
-	default:
-		return nil
-	}
-}
-
-// Global profiler to be used by service go-routine.
-var globalProfiler interface {
-	Stop()
 }
 
 // dump the request into a string in JSON format.

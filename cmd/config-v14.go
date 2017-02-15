@@ -195,7 +195,7 @@ func (s *serverConfigV14) SetCredential(creds credential) {
 	defer serverConfigMu.Unlock()
 
 	// Set updated credential.
-	s.Credential = newCredentialWithKeys(creds.AccessKey, creds.SecretKey)
+	s.Credential = createCredential(creds.AccessKey, creds.SecretKey)
 }
 
 // GetCredentials get current credentials.

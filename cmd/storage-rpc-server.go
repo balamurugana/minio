@@ -238,3 +238,47 @@ func registerStorageRPCRouters(mux *router.Router, srvCmdConfig serverCmdConfig)
 	}
 	return nil
 }
+
+func newStorageServers(endpoints EndpointList) ([]*storageServer, error) {
+	var storageServers []*storageServer
+	for _, endpoint := range endpoints {
+		if !endpoint.IsLocal {
+			continue
+		}
+
+		storage, err := newPosix(endpoint.URL.Path)
+		if err != nil && err != errDiskNotFound {
+			return nil, err
+		}
+
+		storageServers = append(storageServers, &storageServer{
+			storage: storage,
+			path:    endpoint.URL.Path,
+		})
+	}
+
+	return storageServers, nil
+}
+
+// addStorageRPCRouter - add storage rpc router.
+func addStorageRPCRouters(setup Setup, mux *router.Router) error {
+	storageServers, err := newStorageServers(setup.endpoints)
+	if err != nil {
+		return traceError(err)
+	}
+
+	// Create a unique route for each disk exported from this node.
+	for _, storageServer := range storageServers {
+		storageRPCServer := rpc.NewServer()
+		if err := storageRPCServer.RegisterName("Storage", storageServer); err != nil {
+			return traceError(err)
+		}
+
+		// Add minio storage routes.
+		storageRouter := mux.PathPrefix(minioReservedBucketPath).Subrouter()
+		storageRouter.Path(path.Join(storageRPCPath, storageServer.path)).Handler(storageRPCServer)
+	}
+
+	return nil
+
+}

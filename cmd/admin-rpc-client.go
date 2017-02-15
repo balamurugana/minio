@@ -266,6 +266,32 @@ func initGlobalAdminPeers(eps []*url.URL) {
 	globalAdminPeers = makeAdminPeers(eps)
 }
 
+func initAdminPeers(setup Setup) {
+	var adminPeerList []adminPeer
+	adminPeerList = append(adminPeerList, adminPeer{
+		setup.serverAddr,
+		localAdminClient{},
+	})
+
+	cred := setup.cred
+	serviceEndpoint := path.Join(minioReservedBucketPath, adminPath)
+	for _, host := range setup.endpoints.GetRemoteHosts() {
+		adminPeerList = append(adminPeerList, adminPeer{
+			addr: host,
+			cmdRunner: &remoteAdminClient{newAuthRPCClient(authConfig{
+				accessKey:       cred.AccessKey,
+				secretKey:       cred.SecretKey,
+				serverAddr:      host,
+				serviceEndpoint: serviceEndpoint,
+				secureConn:      setup.secureConn,
+				serviceName:     "Admin",
+			})},
+		})
+	}
+
+	globalAdminPeers = adminPeerList
+}
+
 // invokeServiceCmd - Invoke Restart command.
 func invokeServiceCmd(cp adminPeer, cmd serviceSignal) (err error) {
 	switch cmd {

@@ -17,28 +17,19 @@
 package cmd
 
 import (
-	"os"
 	"path/filepath"
 	"sync"
 
 	"github.com/minio/minio/pkg/quick"
 )
 
-func loadOldConfig(configFile string, config interface{}) (interface{}, error) {
-	if _, err := os.Stat(configFile); err != nil {
-		return nil, err
+func loadOldConfig(configFile string, config interface{}) (err error) {
+	var qc quick.Config
+	if qc, err = quick.New(config); err == nil {
+		err = qc.Load(configFile)
 	}
 
-	qc, err := quick.New(config)
-	if err != nil {
-		return nil, err
-	}
-
-	if err = qc.Load(configFile); err != nil {
-		return nil, err
-	}
-
-	return config, nil
+	return err
 }
 
 /////////////////// Config V1 ///////////////////
@@ -49,17 +40,12 @@ type configV1 struct {
 }
 
 // loadConfigV1 load config
-func loadConfigV1() (*configV1, error) {
-	configPath, err := getConfigPath()
-	if err != nil {
-		return nil, err
-	}
-	configFile := filepath.Join(configPath, "fsUsers.json")
-	config, err := loadOldConfig(configFile, &configV1{Version: "1"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*configV1), err
+func loadConfigV1(configFile string) (config *configV1, err error) {
+	configFile = filepath.Join(filepath.Dir(configFile), "fsUsers.json")
+
+	config = &configV1{Version: "1"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 /////////////////// Config V2 ///////////////////
@@ -85,16 +71,10 @@ type configV2 struct {
 }
 
 // loadConfigV2 load config version '2'.
-func loadConfigV2() (*configV2, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &configV2{Version: "2"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*configV2), err
+func loadConfigV2(configFile string) (config *configV2, err error) {
+	config = &configV2{Version: "2"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 /////////////////// Config V3 ///////////////////
@@ -151,16 +131,10 @@ type configV3 struct {
 }
 
 // loadConfigV3 load config version '3'.
-func loadConfigV3() (*configV3, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &configV3{Version: "3"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*configV3), err
+func loadConfigV3(configFile string) (config *configV3, err error) {
+	config = &configV3{Version: "3"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // logger type representing version '4' logger config.
@@ -194,16 +168,10 @@ type configV4 struct {
 }
 
 // loadConfigV4 load config version '4'.
-func loadConfigV4() (*configV4, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &configV4{Version: "4"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*configV4), err
+func loadConfigV4(configFile string) (config *configV4, err error) {
+	config = &configV4{Version: "4"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // logger type representing version '5' logger config.
@@ -264,16 +232,10 @@ type configV5 struct {
 }
 
 // loadConfigV5 load config version '5'.
-func loadConfigV5() (*configV5, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &configV5{Version: "5"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*configV5), err
+func loadConfigV5(configFile string) (config *configV5, err error) {
+	config = &configV5{Version: "5"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 type loggerV6 struct {
@@ -298,16 +260,10 @@ type configV6 struct {
 }
 
 // loadConfigV6 load config version '6'.
-func loadConfigV6() (*configV6, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &configV6{Version: "6"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*configV6), err
+func loadConfigV6(configFile string) (config *configV6, err error) {
+	config = &configV6{Version: "6"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // Notifier represents collection of supported notification queues in version
@@ -351,16 +307,10 @@ type serverConfigV7 struct {
 }
 
 // loadConfigV7 load config version '7'.
-func loadConfigV7() (*serverConfigV7, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV7{Version: "7"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV7), err
+func loadConfigV7(configFile string) (config *serverConfigV7, err error) {
+	config = &serverConfigV7{Version: "7"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // serverConfigV8 server configuration version '8'. Adds NATS notifier
@@ -383,16 +333,10 @@ type serverConfigV8 struct {
 }
 
 // loadConfigV8 load config version '8'.
-func loadConfigV8() (*serverConfigV8, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV8{Version: "8"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV8), err
+func loadConfigV8(configFile string) (config *serverConfigV8, err error) {
+	config = &serverConfigV8{Version: "8"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // serverConfigV9 server configuration version '9'. Adds PostgreSQL
@@ -414,16 +358,10 @@ type serverConfigV9 struct {
 	rwMutex *sync.RWMutex
 }
 
-func loadConfigV9() (*serverConfigV9, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV9{Version: "9"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV9), err
+func loadConfigV9(configFile string) (config *serverConfigV9, err error) {
+	config = &serverConfigV9{Version: "9"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // serverConfigV10 server configuration version '10' which is like
@@ -443,16 +381,10 @@ type serverConfigV10 struct {
 	Notify notifierV1 `json:"notify"`
 }
 
-func loadConfigV10() (*serverConfigV10, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV10{Version: "10"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV10), err
+func loadConfigV10(configFile string) (config *serverConfigV10, err error) {
+	config = &serverConfigV10{Version: "10"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // natsNotifyV1 - structure was valid until config V 11
@@ -483,16 +415,10 @@ type serverConfigV11 struct {
 	Notify notifierV1 `json:"notify"`
 }
 
-func loadConfigV11() (*serverConfigV11, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV11{Version: "11"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV11), err
+func loadConfigV11(configFile string) (config *serverConfigV11, err error) {
+	config = &serverConfigV11{Version: "11"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // serverConfigV12 server configuration version '12' which is like
@@ -511,16 +437,10 @@ type serverConfigV12 struct {
 	Notify notifierV2 `json:"notify"`
 }
 
-func loadConfigV12() (*serverConfigV12, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV12{Version: "12"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV12), err
+func loadConfigV12(configFile string) (config *serverConfigV12, err error) {
+	config = &serverConfigV12{Version: "12"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }
 
 // serverConfigV13 server configuration version '13' which is like
@@ -539,14 +459,8 @@ type serverConfigV13 struct {
 	Notify *notifier `json:"notify"`
 }
 
-func loadConfigV13() (*serverConfigV13, error) {
-	configFile, err := getConfigFile()
-	if err != nil {
-		return nil, err
-	}
-	config, err := loadOldConfig(configFile, &serverConfigV13{Version: "13"})
-	if config == nil {
-		return nil, err
-	}
-	return config.(*serverConfigV13), err
+func loadConfigV13(configFile string) (config *serverConfigV13, err error) {
+	config = &serverConfigV13{Version: "13"}
+	err = loadOldConfig(configFile, config)
+	return config, err
 }

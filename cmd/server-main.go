@@ -19,9 +19,12 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,7 +32,9 @@ import (
 
 	"runtime"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/minio/cli"
+	"github.com/minio/mc/pkg/console"
 )
 
 var serverFlags = []cli.Flag{
@@ -44,7 +49,7 @@ var serverCmd = cli.Command{
 	Name:   "server",
 	Usage:  "Start object storage server.",
 	Flags:  append(serverFlags, globalFlags...),
-	Action: serverMain,
+	Action: mainServer,
 	CustomHelpTemplate: `NAME:
  {{.HelpName}} - {{.Usage}}
 
@@ -527,4 +532,359 @@ func newObjectLayer(srvCmdCfg serverCmdConfig) (newObject ObjectLayer, err error
 
 	// XL initialized, return.
 	return newObject, nil
+}
+
+///
+/// new setup
+///
+func checkConfigDir(configDir string) error {
+	fi, err := os.Stat(configDir)
+	if err == nil {
+		if fi.IsDir() {
+			return nil
+		}
+
+		return fmt.Errorf("`%s' is not a directory", configDir)
+	}
+
+	if !os.IsNotExist(err) {
+		return err
+	}
+
+	// As configDir does not exist, we will create it later, but check if its parent directory exists.
+	parentConfigDir := filepath.Dir(configDir)
+	fi, err = os.Stat(parentConfigDir)
+	if err != nil {
+		return err
+	}
+
+	if !fi.IsDir() {
+		return fmt.Errorf("`%s' is not a directory", parentConfigDir)
+	}
+
+	return nil
+}
+
+func mkConfigDir(configDir string) (err error) {
+	if err = os.Mkdir(configDir, 0755); err != nil && !os.IsExist(err) {
+		// Ignore if directory already exists
+		return err
+	}
+
+	certsDir := filepath.Join(configDir, "certs", "CAs")
+	if err = mkdirAll(certsDir, 0700); os.IsExist(err) {
+		// Ignore if directory already exists
+		err = nil
+	}
+
+	return err
+}
+
+func getServerConfig(configDir string, envCred credential) (serverConfig *serverConfigV14New, cred credential, err error) {
+	cred = envCred
+	configFile := filepath.Join(configDir, "config.json")
+	fi, err := os.Stat(configFile)
+
+	if err == nil {
+		if !fi.Mode().IsRegular() {
+			err = fmt.Errorf("config file `%s' is not a file", configFile)
+			return serverConfig, cred, err
+		}
+
+		if err = migrateConfig(configFile); err != nil {
+			return serverConfig, cred, err
+		}
+
+		if serverConfig, err = loadServerConfig(configFile); err != nil {
+			err = fmt.Errorf("unable to load configuration file %s. %s", configFile, err)
+			return serverConfig, cred, err
+		}
+
+		if !cred.IsValid() {
+			cred = serverConfig.GetCredential()
+			// Create freshly to generate secret hash key
+			cred = createCredential(cred.AccessKey, cred.SecretKey)
+		}
+	} else if os.IsNotExist(err) {
+		if !cred.IsValid() {
+			cred = newCredential()
+		}
+
+		serverConfig = newServerConfig(cred, "on")
+		if err = serverConfig.Save(configFile); err != nil {
+			err = fmt.Errorf("unable to initialize configuration file %s. %s", configFile, err)
+		}
+	}
+
+	return serverConfig, cred, err
+}
+
+var setup Setup
+
+// mainServer handler called for 'minio server' command.
+func mainServer(ctx *cli.Context) {
+	if !ctx.Args().Present() || ctx.Args().First() == "help" {
+		cli.ShowCommandHelpAndExit(ctx, "server", -1)
+	}
+
+	quiet := ctx.Bool("quiet") || ctx.GlobalBool("quiet")
+	quietPrintf := func(format string, args ...interface{}) {
+		if !quiet {
+			console.Printf(format, args...)
+		}
+	}
+
+	quietPrintf("Validating command line arguments and environment variables\n")
+
+	configDir := ctx.String("config-dir")
+	if err := checkConfigDir(configDir); err != nil {
+		quietPrintf("%s\n", err)
+		os.Exit(-1)
+	}
+
+	serverAddr := ctx.String("address")
+	err := CheckLocalServerAddr(serverAddr)
+	if err != nil {
+		quietPrintf("server address `%s': %s\n", serverAddr, err)
+		os.Exit(-1)
+	}
+
+	args := ctx.Args()
+	setup, err = NewSetup(serverAddr, args...)
+	if err != nil {
+		quietPrintf("%s\n", err)
+		os.Exit(-1)
+	}
+
+	profileMode := os.Getenv("_MINIO_PROFILER")
+	if err = checkProfileMode(profileMode); err != nil {
+		quietPrintf("%s\n", err)
+		os.Exit(-1)
+	}
+
+	isCacheDisabled := strings.EqualFold(os.Getenv("_MINIO_CACHE"), "off")
+	isBrowserDisabled := strings.EqualFold(os.Getenv("MINIO_BROWSER"), "off")
+
+	envAccessKey := os.Getenv("MINIO_ACCESS_KEY")
+	if envAccessKey != "" {
+		if !isAccessKeyValid(envAccessKey) {
+			quietPrintf("invalid access key in environment variable MINIO_ACCESS_KEY. %s\n", err)
+			os.Exit(-1)
+		}
+	}
+
+	envSecretKey := os.Getenv("MINIO_SECRET_KEY")
+	if envSecretKey != "" {
+		if !isSecretKeyValid(envSecretKey) {
+			quietPrintf("invalid secret key in environment variable MINIO_SECRET_KEY. %s\n", err)
+			os.Exit(-1)
+		}
+	}
+
+	if envAccessKey != "" && envSecretKey != "" {
+		setup.cred = createCredential(envAccessKey, envSecretKey)
+	}
+
+	quietPrintf("Checking SSL certificates\n")
+	setup.publicCrtFile = filepath.Join(configDir, "certs", "public.crt")
+	setup.privateKeyFile = filepath.Join(configDir, "certs", "private.key")
+	if isFile(setup.publicCrtFile) && isFile(setup.privateKeyFile) {
+		if setup.publicCerts, err = parsePublicCertFile(setup.publicCrtFile); err != nil {
+			quietPrintf("Unable to parse public certificate file `%s'. %s\n", setup.publicCrtFile, err)
+			os.Exit(1)
+		}
+
+		certsCAsDir := filepath.Join(configDir, "certs", "CAs")
+		if setup.rootCAs, err = getRootCAs(certsCAsDir); err != nil {
+			quietPrintf("Unable to load CA files in `%s'. %s\n", certsCAsDir, err)
+			os.Exit(1)
+		}
+		quietPrintf("HTTPS Server will be run\n")
+		setup.secureConn = true
+	} else {
+		quietPrintf("No SSL certificates found.  HTTP Server will be run\n")
+		setup.secureConn = false
+	}
+
+	setup.configDir = configDir
+	setup.profileMode = profileMode
+	setup.isCacheDisabled = isCacheDisabled
+	setup.isBrowserDisabled = isBrowserDisabled
+
+	if setup.secureConn {
+		setup.endpoints.SetSSL()
+	} else {
+		setup.endpoints.SetNonSSL()
+	}
+
+	// Check for new update
+	if !quiet {
+		quietPrintf("Checking for new updates\n")
+		if older, downloadURL, uerr := getUpdateInfo(1 * time.Second); uerr == nil && older > time.Duration(0) {
+			quietPrintf(colorizeUpdateMessage(downloadURL, older))
+		}
+	}
+
+	// Load or migrate config file or create config file
+	if err = mkConfigDir(configDir); err != nil {
+		quietPrintf("%v\n", err)
+		os.Exit(1)
+	}
+
+	if setup.serverConfig, setup.cred, err = getServerConfig(configDir, setup.cred); err != nil {
+		quietPrintf("%v\n", err)
+		os.Exit(1)
+	}
+
+	setup.profiler = startProfiler(profileMode)
+
+	fmt.Printf("%+v\n", setup)
+
+	quietPrintf("Initialize loggers\n")
+	clogger := setup.serverConfig.Logger.GetConsole()
+	if clogger.Enable {
+		level, err := logrus.ParseLevel(clogger.Level)
+		if err != nil {
+			level = logrus.ErrorLevel
+			quietPrintf("Unknown log level `%s' found in Logger.Console in config file. Fallback to %s\n", clogger.Level, level)
+		}
+
+		logger := logrus.New()
+		logger.Level = level
+		logger.Formatter = new(logrus.TextFormatter)
+		log.loggers = append(log.loggers, logger)
+	}
+
+	flogger := setup.serverConfig.Logger.GetFile()
+	if flogger.Enable {
+		if flogger.Filename == "" {
+			quietPrintf("No file is given. Ignoring Logger.File\n")
+		} else {
+			level, err := logrus.ParseLevel(flogger.Level)
+			if err != nil {
+				quietPrintf("Unknown log level `%s' found in Logger.File in config file. Ignoring Logger.File\n")
+			} else {
+				// Creates the named file with mode 0666, honors system umask.
+				file, err := os.OpenFile(flogger.Filename, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+				if err != nil {
+					quietPrintf("Unable to open log file `%s'. Ignoring Logger.File\n", flogger.Filename)
+				} else {
+					logger := logrus.New()
+					logger.Level = level
+					logger.Formatter = new(logrus.JSONFormatter)
+					logger.Hooks.Add(&localFile{file})
+					logger.Out = ioutil.Discard
+					log.loggers = append(log.loggers, logger)
+				}
+			}
+		}
+	}
+
+	// Init the error tracing module.
+	initError()
+
+	// Init lock subsystem.
+	initLockSystem(setup)
+
+	handler, err := newServerHandler(setup)
+	fatalIf(err, "Unable to initialize RPC services.")
+
+	// Initialize a new HTTP server.
+	apiServer := NewServerMux(setup.serverAddr, handler)
+
+	initS3Peers(setup)
+	initAdminPeers(setup)
+
+	// Run api server in background.
+	go func() {
+		var publicCrtFile, privateKeyFile string
+		if setup.secureConn {
+			publicCrtFile, privateKeyFile = setup.publicCrtFile, setup.privateKeyFile
+		}
+
+		serr := apiServer.ListenAndServe(publicCrtFile, privateKeyFile)
+		fatalIf(serr, "Failed to start HTTP server.")
+	}()
+
+	objectLayer, err := initObjectLayer(setup)
+	fatalIf(err, "Initializing object layer failed")
+
+	globalObjLayerMutex.Lock()
+	globalObjectAPI = objectLayer
+	globalObjLayerMutex.Unlock()
+
+	// Prints the formatted startup message once object layer is initialized.
+	fmt.Printf("%+v\n", setup)
+	// printStartupMessage(apiEndPoints)
+
+	// Set uptime time after object layer has initialized.
+	globalBootTime = time.Now().UTC()
+
+	// Waits on the server.
+	<-globalServiceDoneCh
+}
+
+func isFile(name string) bool {
+	fi, err := os.Stat(name)
+	// Return if no error and it is a regular file.
+	return (err == nil && fi.Mode().IsRegular())
+}
+
+// Initialize object layer with the supplied disks, objectLayer is nil upon any error.
+func initObjectLayer(setup Setup) (objectLayer ObjectLayer, err error) {
+	if setup.setupType == FSSetupType {
+		objectLayer, err = newFSObjectLayer(setup.endpoints[0].Value)
+		if err != nil {
+			return nil, err
+		}
+
+		// Initialize and load bucket policies.
+		if err = initBucketPolicies(objectLayer); err != nil {
+			return nil, fmt.Errorf("Unable to load all bucket policies. %s", err)
+		}
+
+		// Initialize a new event notifier.
+		if err = initEventNotifier2(setup, objectLayer); err != nil {
+			return nil, fmt.Errorf("Unable to initialize event notification. %s", err)
+		}
+
+		return objectLayer, err
+	}
+
+	storageDisks := make([]StorageAPI, len(setup.endpoints))
+	for index, endpoint := range setup.endpoints {
+		var storage StorageAPI
+		if setup.setupType == XLSetupType {
+			storage, err = newPosix(endpoint.Value)
+		} else if endpoint.IsLocal {
+			storage, err = newPosix(endpoint.URL.Path)
+		} else {
+			storage, err = newStorageRPCClient(endpoint, setup.cred, setup.secureConn)
+		}
+		// Intentionally ignore disk not found errors. XL is designed
+		// to handle these errors internally.
+		if err != nil && err != errDiskNotFound {
+			return nil, err
+		}
+
+		storageDisks[index] = storage
+	}
+
+	// // First disk argument check if it is local.
+	// firstDisk := setup.endpoints[0].IsLocal
+
+	// // Wait for formatting disks for XL backend.
+	// var formattedDisks []StorageAPI
+	// formattedDisks, err = waitForFormatXLDisks(firstDisk, setup.endpoints, storageDisks)
+	// if err != nil {
+	// 	return nil, err
+	// }
+
+	// Cleanup objects that weren't successfully written into the namespace.
+	if err = houseKeeping(storageDisks); err != nil {
+		return nil, err
+	}
+
+	// Once XL formatted, initialize object layer.
+	return newXLObjectLayer(storageDisks)
 }

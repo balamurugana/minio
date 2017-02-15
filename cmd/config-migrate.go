@@ -25,102 +25,96 @@ import (
 	"github.com/minio/minio/pkg/quick"
 )
 
-func migrateConfig() error {
+func migrateConfig(configFile string) error {
 	// Purge all configs with version '1'.
-	if err := purgeV1(); err != nil {
+	if err := purgeV1(configFile); err != nil {
 		return err
 	}
 	// Migrate version '2' to '3'.
-	if err := migrateV2ToV3(); err != nil {
+	if err := migrateV2ToV3(configFile); err != nil {
 		return err
 	}
 	// Migrate version '3' to '4'.
-	if err := migrateV3ToV4(); err != nil {
+	if err := migrateV3ToV4(configFile); err != nil {
 		return err
 	}
 	// Migrate version '4' to '5'.
-	if err := migrateV4ToV5(); err != nil {
+	if err := migrateV4ToV5(configFile); err != nil {
 		return err
 	}
 	// Migrate version '5' to '6.
-	if err := migrateV5ToV6(); err != nil {
+	if err := migrateV5ToV6(configFile); err != nil {
 		return err
 	}
 	// Migrate version '6' to '7'.
-	if err := migrateV6ToV7(); err != nil {
+	if err := migrateV6ToV7(configFile); err != nil {
 		return err
 	}
 	// Migrate version '7' to '8'.
-	if err := migrateV7ToV8(); err != nil {
+	if err := migrateV7ToV8(configFile); err != nil {
 		return err
 	}
 	// Migrate version '8' to '9'.
-	if err := migrateV8ToV9(); err != nil {
+	if err := migrateV8ToV9(configFile); err != nil {
 		return err
 	}
 	// Migrate version '9' to '10'.
-	if err := migrateV9ToV10(); err != nil {
+	if err := migrateV9ToV10(configFile); err != nil {
 		return err
 	}
 	// Migrate version '10' to '11'.
-	if err := migrateV10ToV11(); err != nil {
+	if err := migrateV10ToV11(configFile); err != nil {
 		return err
 	}
 	// Migrate version '11' to '12'.
-	if err := migrateV11ToV12(); err != nil {
+	if err := migrateV11ToV12(configFile); err != nil {
 		return err
 	}
 	// Migration version '12' to '13'.
-	if err := migrateV12ToV13(); err != nil {
+	if err := migrateV12ToV13(configFile); err != nil {
 		return err
 	}
 	// Migration version '13' to '14'.
-	if err := migrateV13ToV14(); err != nil {
+	if err := migrateV13ToV14(configFile); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-// Version '1' is not supported anymore and deprecated, safe to delete.
-func purgeV1() error {
-	cv1, err := loadConfigV1()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+// Version '1' is deprecated and not supported anymore, safe to delete.
+func purgeV1(configFile string) error {
+	cv1, err := loadConfigV1(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘1’. %v", err)
 
 	}
 
-	if cv1.Version == "1" {
-		console.Println("Removed unsupported config version ‘1’.")
-		/// Purge old fsUsers.json file
-		configPath, err := getConfigPath()
-		if err != nil {
-			return fmt.Errorf("Unable to retrieve config path. %v", err)
-		}
-
-		configFile := filepath.Join(configPath, "fsUsers.json")
-		removeAll(configFile)
-		return nil
+	if cv1.Version != "1" {
+		return fmt.Errorf("Unrecognized config version ‘" + cv1.Version + "’.")
 	}
-	return fmt.Errorf("Failed to migrate unrecognized config version ‘" + cv1.Version + "’.")
+
+	configFile = filepath.Join(filepath.Dir(configFile), "fsUsers.json")
+	removeAll(configFile)
+	console.Println("Removed unsupported config version ‘1’.")
+	return nil
 }
 
 // Version '2' to '3' config migration adds new fields and re-orders
 // previous fields. Simplifies config for future additions.
-func migrateV2ToV3() error {
-	cv2, err := loadConfigV2()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV2ToV3(configFile string) error {
+	cv2, err := loadConfigV2(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘2’. %v", err)
 	}
 	if cv2.Version != "2" {
 		return nil
 	}
+
 	srvConfig := &configV3{}
 	srvConfig.Version = "3"
 	srvConfig.Addr = ":9000"
@@ -131,7 +125,7 @@ func migrateV2ToV3() error {
 	srvConfig.Region = cv2.Credentials.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature V4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = consoleLogger{
 		Enable: true,
@@ -158,30 +152,23 @@ func migrateV2ToV3() error {
 		return fmt.Errorf("Unable to initialize config. %v", err)
 	}
 
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
+	// Save configV3
+	if err = qc.Save(configFile); err != nil {
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv2.Version, srvConfig.Version, err)
 	}
 
-	// Migrate the config.
-	err = qc.Save(configFile)
-	if err != nil {
-		return fmt.Errorf("Failed to migrate config from ‘"+cv2.Version+"’ to ‘"+srvConfig.Version+"’ failed. %v", err)
-	}
-
-	console.Println("Migration from version ‘" + cv2.Version + "’ to ‘" + srvConfig.Version + "’ completed successfully.")
+	console.Println("Migration from version ‘2’ to ‘3’ completed successfully.")
 	return nil
 }
 
 // Version '3' to '4' migrates config, removes previous fields related
 // to backend types and server address. This change further simplifies
 // the config for future additions.
-func migrateV3ToV4() error {
-	cv3, err := loadConfigV3()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV3ToV4(configFile string) error {
+	cv3, err := loadConfigV3(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘3’. %v", err)
 	}
 	if cv3.Version != "3" {
@@ -195,7 +182,7 @@ func migrateV3ToV4() error {
 	srvConfig.Region = cv3.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv3.Logger.Console
 	srvConfig.Logger.File = cv3.Logger.File
@@ -205,29 +192,24 @@ func migrateV3ToV4() error {
 	if err != nil {
 		return fmt.Errorf("Unable to initialize the quick config. %v", err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf("Failed to migrate config from ‘"+cv3.Version+"’ to ‘"+srvConfig.Version+"’ failed. %v", err)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv3.Version, srvConfig.Version, err)
 	}
 
-	console.Println("Migration from version ‘" + cv3.Version + "’ to ‘" + srvConfig.Version + "’ completed successfully.")
+	console.Println("Migration from version ‘3’ to ‘4’ completed successfully.")
 	return nil
 }
 
 // Version '4' to '5' migrates config, removes previous fields related
 // to backend types and server address. This change further simplifies
 // the config for future additions.
-func migrateV4ToV5() error {
-	cv4, err := loadConfigV4()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV4ToV5(configFile string) error {
+	cv4, err := loadConfigV4(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘4’. %v", err)
 	}
 	if cv4.Version != "4" {
@@ -241,7 +223,7 @@ func migrateV4ToV5() error {
 	srvConfig.Region = cv4.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv4.Logger.Console
 	srvConfig.Logger.File = cv4.Logger.File
@@ -254,29 +236,24 @@ func migrateV4ToV5() error {
 	if err != nil {
 		return fmt.Errorf("Unable to initialize the quick config. %v", err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf("Failed to migrate config from ‘"+cv4.Version+"’ to ‘"+srvConfig.Version+"’ failed. %v", err)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv4.Version, srvConfig.Version, err)
 	}
 
-	console.Println("Migration from version ‘" + cv4.Version + "’ to ‘" + srvConfig.Version + "’ completed successfully.")
+	console.Println("Migration from version ‘4’ to ‘5’ completed successfully.")
 	return nil
 }
 
 // Version '5' to '6' migrates config, removes previous fields related
 // to backend types and server address. This change further simplifies
 // the config for future additions.
-func migrateV5ToV6() error {
-	cv5, err := loadConfigV5()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV5ToV6(configFile string) error {
+	cv5, err := loadConfigV5(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘5’. %v", err)
 	}
 	if cv5.Version != "5" {
@@ -290,7 +267,7 @@ func migrateV5ToV6() error {
 	srvConfig.Region = cv5.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv5.Logger.Console
 	srvConfig.Logger.File = cv5.Logger.File
@@ -330,29 +307,24 @@ func migrateV5ToV6() error {
 	if err != nil {
 		return fmt.Errorf("Unable to initialize the quick config. %v", err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf("Failed to migrate config from ‘"+cv5.Version+"’ to ‘"+srvConfig.Version+"’ failed. %v", err)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv5.Version, srvConfig.Version, err)
 	}
 
-	console.Println("Migration from version ‘" + cv5.Version + "’ to ‘" + srvConfig.Version + "’ completed successfully.")
+	console.Println("Migration from version ‘5’ to ‘6’ completed successfully.")
 	return nil
 }
 
 // Version '6' to '7' migrates config, removes previous fields related
 // to backend types and server address. This change further simplifies
 // the config for future additions.
-func migrateV6ToV7() error {
-	cv6, err := loadConfigV6()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV6ToV7(configFile string) error {
+	cv6, err := loadConfigV6(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘6’. %v", err)
 	}
 	if cv6.Version != "6" {
@@ -366,7 +338,7 @@ func migrateV6ToV7() error {
 	srvConfig.Region = cv6.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv6.Logger.Console
 	srvConfig.Logger.File = cv6.Logger.File
@@ -394,29 +366,24 @@ func migrateV6ToV7() error {
 	if err != nil {
 		return fmt.Errorf("Unable to initialize the quick config. %v", err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf("Failed to migrate config from ‘"+cv6.Version+"’ to ‘"+srvConfig.Version+"’ failed. %v", err)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv6.Version, srvConfig.Version, err)
 	}
 
-	console.Println("Migration from version ‘" + cv6.Version + "’ to ‘" + srvConfig.Version + "’ completed successfully.")
+	console.Println("Migration from version ‘6’ to ‘7’ completed successfully.")
 	return nil
 }
 
 // Version '7' to '8' migrates config, removes previous fields related
 // to backend types and server address. This change further simplifies
 // the config for future additions.
-func migrateV7ToV8() error {
-	cv7, err := loadConfigV7()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV7ToV8(configFile string) error {
+	cv7, err := loadConfigV7(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘7’. %v", err)
 	}
 	if cv7.Version != "7" {
@@ -430,7 +397,7 @@ func migrateV7ToV8() error {
 	srvConfig.Region = cv7.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv7.Logger.Console
 	srvConfig.Logger.File = cv7.Logger.File
@@ -465,28 +432,23 @@ func migrateV7ToV8() error {
 	if err != nil {
 		return fmt.Errorf("Unable to initialize the quick config. %v", err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf("Failed to migrate config from ‘"+cv7.Version+"’ to ‘"+srvConfig.Version+"’ failed. %v", err)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv7.Version, srvConfig.Version, err)
 	}
 
-	console.Println("Migration from version ‘" + cv7.Version + "’ to ‘" + srvConfig.Version + "’ completed successfully.")
+	console.Println("Migration from version ‘7’ to ‘8’ completed successfully.")
 	return nil
 }
 
 // Version '8' to '9' migration. Adds postgresql notifier
 // configuration, but it's otherwise the same as V8.
-func migrateV8ToV9() error {
-	cv8, err := loadConfigV8()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV8ToV9(configFile string) error {
+	cv8, err := loadConfigV8(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘8’. %v", err)
 	}
 	if cv8.Version != "8" {
@@ -500,7 +462,7 @@ func migrateV8ToV9() error {
 	srvConfig.Region = cv8.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv8.Logger.Console
 	srvConfig.Logger.Console.Level = "error"
@@ -544,36 +506,23 @@ func migrateV8ToV9() error {
 		return fmt.Errorf("Unable to initialize the quick config. %v",
 			err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf(
-			"Failed to migrate config from ‘"+
-				cv8.Version+"’ to ‘"+srvConfig.Version+
-				"’ failed. %v", err,
-		)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv8.Version, srvConfig.Version, err)
 	}
 
-	console.Println(
-		"Migration from version ‘" +
-			cv8.Version + "’ to ‘" + srvConfig.Version +
-			"’ completed successfully.",
-	)
+	console.Println("Migration from version ‘8’ to ‘9’ completed successfully.")
 	return nil
 }
 
 // Version '9' to '10' migration. Remove syslog config
 // but it's otherwise the same as V9.
-func migrateV9ToV10() error {
-	cv9, err := loadConfigV9()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV9ToV10(configFile string) error {
+	cv9, err := loadConfigV9(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘9’. %v", err)
 	}
 	if cv9.Version != "9" {
@@ -587,7 +536,7 @@ func migrateV9ToV10() error {
 	srvConfig.Region = cv9.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv9.Logger.Console
 	srvConfig.Logger.File = cv9.Logger.File
@@ -629,36 +578,23 @@ func migrateV9ToV10() error {
 		return fmt.Errorf("Unable to initialize the quick config. %v",
 			err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf(
-			"Failed to migrate config from ‘"+
-				cv9.Version+"’ to ‘"+srvConfig.Version+
-				"’ failed. %v", err,
-		)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv9.Version, srvConfig.Version, err)
 	}
 
-	console.Println(
-		"Migration from version ‘" +
-			cv9.Version + "’ to ‘" + srvConfig.Version +
-			"’ completed successfully.",
-	)
+	console.Println("Migration from version ‘9’ to ‘10’ completed successfully.")
 	return nil
 }
 
 // Version '10' to '11' migration. Add support for Kafka
 // notifications.
-func migrateV10ToV11() error {
-	cv10, err := loadConfigV10()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV10ToV11(configFile string) error {
+	cv10, err := loadConfigV10(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘10’. %v", err)
 	}
 	if cv10.Version != "10" {
@@ -672,7 +608,7 @@ func migrateV10ToV11() error {
 	srvConfig.Region = cv10.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv10.Logger.Console
 	srvConfig.Logger.File = cv10.Logger.File
@@ -717,36 +653,23 @@ func migrateV10ToV11() error {
 		return fmt.Errorf("Unable to initialize the quick config. %v",
 			err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf(
-			"Failed to migrate config from ‘"+
-				cv10.Version+"’ to ‘"+srvConfig.Version+
-				"’ failed. %v", err,
-		)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv10.Version, srvConfig.Version, err)
 	}
 
-	console.Println(
-		"Migration from version ‘" +
-			cv10.Version + "’ to ‘" + srvConfig.Version +
-			"’ completed successfully.",
-	)
+	console.Println("Migration from version ‘10’ to ‘11’ completed successfully.")
 	return nil
 }
 
 // Version '11' to '12' migration. Add support for NATS streaming
 // notifications.
-func migrateV11ToV12() error {
-	cv11, err := loadConfigV11()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV11ToV12(configFile string) error {
+	cv11, err := loadConfigV11(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘11’. %v", err)
 	}
 	if cv11.Version != "11" {
@@ -760,7 +683,7 @@ func migrateV11ToV12() error {
 	srvConfig.Region = cv11.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv11.Logger.Console
 	srvConfig.Logger.File = cv11.Logger.File
@@ -823,35 +746,22 @@ func migrateV11ToV12() error {
 		return fmt.Errorf("Unable to initialize the quick config. %v",
 			err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf(
-			"Failed to migrate config from ‘"+
-				cv11.Version+"’ to ‘"+srvConfig.Version+
-				"’ failed. %v", err,
-		)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv11.Version, srvConfig.Version, err)
 	}
 
-	console.Println(
-		"Migration from version ‘" +
-			cv11.Version + "’ to ‘" + srvConfig.Version +
-			"’ completed successfully.",
-	)
+	console.Println("Migration from version ‘11’ to ‘12’ completed successfully.")
 	return nil
 }
 
 // Version '12' to '13' migration. Add support for custom webhook endpoint.
-func migrateV12ToV13() error {
-	cv12, err := loadConfigV12()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV12ToV13(configFile string) error {
+	cv12, err := loadConfigV12(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘12’. %v", err)
 	}
 	if cv12.Version != "12" {
@@ -868,7 +778,7 @@ func migrateV12ToV13() error {
 	srvConfig.Region = cv12.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv12.Logger.Console
 	srvConfig.Logger.File = cv12.Logger.File
@@ -920,35 +830,22 @@ func migrateV12ToV13() error {
 		return fmt.Errorf("Unable to initialize the quick config. %v",
 			err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf(
-			"Failed to migrate config from ‘"+
-				cv12.Version+"’ to ‘"+srvConfig.Version+
-				"’ failed. %v", err,
-		)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv12.Version, srvConfig.Version, err)
 	}
 
-	console.Println(
-		"Migration from version ‘" +
-			cv12.Version + "’ to ‘" + srvConfig.Version +
-			"’ completed successfully.",
-	)
+	console.Println("Migration from version ‘12’ to ‘13’ completed successfully.")
 	return nil
 }
 
 // Version '13' to '14' migration. Add support for custom webhook endpoint.
-func migrateV13ToV14() error {
-	cv13, err := loadConfigV13()
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+func migrateV13ToV14(configFile string) error {
+	cv13, err := loadConfigV13(configFile)
+	if os.IsNotExist(err) {
+		return nil
+	} else if err != nil {
 		return fmt.Errorf("Unable to load config version ‘13’. %v", err)
 	}
 	if cv13.Version != "13" {
@@ -965,7 +862,7 @@ func migrateV13ToV14() error {
 	srvConfig.Region = cv13.Region
 	if srvConfig.Region == "" {
 		// Region needs to be set for AWS Signature Version 4.
-		srvConfig.Region = globalMinioDefaultRegion
+		srvConfig.Region = "us-east-1"
 	}
 	srvConfig.Logger.Console = cv13.Logger.Console
 	srvConfig.Logger.File = cv13.Logger.File
@@ -1022,24 +919,12 @@ func migrateV13ToV14() error {
 		return fmt.Errorf("Unable to initialize the quick config. %v",
 			err)
 	}
-	configFile, err := getConfigFile()
-	if err != nil {
-		return fmt.Errorf("Unable to get config file. %v", err)
-	}
 
 	err = qc.Save(configFile)
 	if err != nil {
-		return fmt.Errorf(
-			"Failed to migrate config from ‘"+
-				cv13.Version+"’ to ‘"+srvConfig.Version+
-				"’ failed. %v", err,
-		)
+		return fmt.Errorf("Failed to migrate config from ‘%s’ to ‘%s’. %v", cv13.Version, srvConfig.Version, err)
 	}
 
-	console.Println(
-		"Migration from version ‘" +
-			cv13.Version + "’ to ‘" + srvConfig.Version +
-			"’ completed successfully.",
-	)
+	console.Println("Migration from version ‘13’ to ‘14’ completed successfully.")
 	return nil
 }

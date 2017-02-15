@@ -750,3 +750,214 @@ func initEventNotifier(objAPI ObjectLayer) error {
 
 	return nil
 }
+
+// Loads all queue targets, initializes each queueARNs depending on their config.
+// Each instance of queueARN registers its own logrus to communicate with the
+// queue service. QueueARN once initialized is not initialized again for the
+// same queueARN, instead previous connection is used.
+func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.Logger, error) {
+	// addQueueTarget - calls newTargetFunc function and adds its returned value to queueTargets
+	addQueueTarget := func(queueTargets map[string]*logrus.Logger,
+		accountID, queueType string,
+		newTargetFunc func(string) (*logrus.Logger, error)) (string, error) {
+
+		// Construct the queue ARN for AMQP.
+		queueARN := minioSqs + serverConfig.GetRegion() + ":" + accountID + ":" + queueType
+
+		// Queue target if already initialized we move to the next ARN.
+		if _, ok := queueTargets[queueARN]; ok {
+			return queueARN, nil
+		}
+
+		// Using accountID we can now initialize a new AMQP logrus instance.
+		logger, err := newTargetFunc(accountID)
+		if err == nil {
+			queueTargets[queueARN] = logger
+		}
+
+		return queueARN, err
+	}
+
+	queueTargets := make(map[string]*logrus.Logger)
+	// Load all amqp targets, initialize their respective loggers.
+	for accountID, amqpN := range serverConfig.Notify.GetAMQP() {
+		if !amqpN.Enable {
+			continue
+		}
+
+		if queueARN, err := addQueueTarget(queueTargets, accountID, queueTypeAMQP, newAMQPNotify); err != nil {
+			if _, ok := err.(net.Error); ok {
+				err = &net.OpError{
+					Op:  "Connecting to " + queueARN,
+					Net: "tcp",
+					Err: err,
+				}
+			}
+
+			return nil, err
+		}
+	}
+
+	// Load all nats targets, initialize their respective loggers.
+	for accountID, natsN := range serverConfig.Notify.GetNATS() {
+		if !natsN.Enable {
+			continue
+		}
+
+		if queueARN, err := addQueueTarget(queueTargets, accountID, queueTypeNATS, newNATSNotify); err != nil {
+			if _, ok := err.(net.Error); ok {
+				err = &net.OpError{
+					Op:  "Connecting to " + queueARN,
+					Net: "tcp",
+					Err: err,
+				}
+			}
+
+			return nil, err
+		}
+	}
+
+	// Load redis targets, initialize their respective loggers.
+	for accountID, redisN := range serverConfig.Notify.GetRedis() {
+		if !redisN.Enable {
+			continue
+		}
+
+		if queueARN, err := addQueueTarget(queueTargets, accountID, queueTypeRedis, newRedisNotify); err != nil {
+			if _, ok := err.(net.Error); ok {
+				err = &net.OpError{
+					Op:  "Connecting to " + queueARN,
+					Net: "tcp",
+					Err: err,
+				}
+			}
+
+			return nil, err
+		}
+	}
+
+	// Load Webhook targets, initialize their respective loggers.
+	for accountID, webhookN := range serverConfig.Notify.GetWebhook() {
+		if !webhookN.Enable {
+			continue
+		}
+
+		if _, err := addQueueTarget(queueTargets, accountID, queueTypeWebhook, newWebhookNotify); err != nil {
+			return nil, err
+		}
+	}
+
+	// Load elastic targets, initialize their respective loggers.
+	for accountID, elasticN := range serverConfig.Notify.GetElasticSearch() {
+		if !elasticN.Enable {
+			continue
+		}
+
+		if queueARN, err := addQueueTarget(queueTargets, accountID, queueTypeElastic, newElasticNotify); err != nil {
+			if _, ok := err.(net.Error); ok {
+				err = &net.OpError{
+					Op:  "Connecting to " + queueARN,
+					Net: "tcp",
+					Err: err,
+				}
+			}
+
+			return nil, err
+		}
+	}
+
+	// Load PostgreSQL targets, initialize their respective loggers.
+	for accountID, pgN := range serverConfig.Notify.GetPostgreSQL() {
+		if !pgN.Enable {
+			continue
+		}
+
+		if queueARN, err := addQueueTarget(queueTargets, accountID, queueTypePostgreSQL, newPostgreSQLNotify); err != nil {
+			if _, ok := err.(net.Error); ok {
+				err = &net.OpError{
+					Op:  "Connecting to " + queueARN,
+					Net: "tcp",
+					Err: err,
+				}
+			}
+
+			return nil, err
+		}
+	}
+
+	// Load Kafka targets, initialize their respective loggers.
+	for accountID, kafkaN := range serverConfig.Notify.GetKafka() {
+		if !kafkaN.Enable {
+			continue
+		}
+
+		if queueARN, err := addQueueTarget(queueTargets, accountID, queueTypeKafka, newKafkaNotify); err != nil {
+			if _, ok := err.(net.Error); ok {
+				err = &net.OpError{
+					Op:  "Connecting to " + queueARN,
+					Net: "tcp",
+					Err: err,
+				}
+			}
+
+			return nil, err
+		}
+	}
+
+	// Successfully initialized queue targets.
+	return queueTargets, nil
+}
+
+// Initialize event notifier.
+func initEventNotifier2(setup Setup, objAPI ObjectLayer) error {
+	if objAPI == nil {
+		return errInvalidArgument
+	}
+
+	// Read all saved bucket notifications.
+	nConfigs, lConfigs, err := loadAllBucketNotifications(objAPI)
+	if err != nil {
+		errorIf(err, "Error loading bucket notifications - %v", err)
+		return err
+	}
+
+	// Initializes all queue targets.
+	queueTargets, err := loadAllQueueTargets2(setup.serverConfig)
+	if err != nil {
+		return err
+	}
+
+	// Initialize internal listener targets
+	listenTargets := make(map[string]*listenerLogger)
+	for _, listeners := range lConfigs {
+		for _, listener := range listeners {
+			ln, err := newListenerLogger(
+				listener.TopicConfig.TopicARN,
+				listener.TargetServer,
+			)
+			if err != nil {
+				errorIf(err, "Unable to initialize listener target logger.")
+				//TODO: improve error
+				return fmt.Errorf("Error initializing listner target logger - %v", err)
+			}
+			listenTargets[listener.TopicConfig.TopicARN] = ln
+		}
+	}
+
+	// Initialize event notifier queue.
+	globalEventNotifier = &eventNotifier{
+		external: externalNotifier{
+			notificationConfigs: nConfigs,
+			targets:             queueTargets,
+			rwMutex:             &sync.RWMutex{},
+		},
+		internal: internalNotifier{
+			rwMutex:            &sync.RWMutex{},
+			targets:            listenTargets,
+			listenerConfigs:    lConfigs,
+			connectedListeners: make(map[string]chan []NotificationEvent),
+		},
+	}
+
+	return nil
+}

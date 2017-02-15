@@ -28,6 +28,46 @@ import (
 // Global name space lock.
 var globalNSMutex *nsLockMap
 
+func initLockSystem(setup Setup) (err error) {
+	// Initialize dsync for distributed XL setup.
+	isDistXLSetup := (setup.setupType == DistXLSetupType)
+	if isDistXLSetup {
+		cred := setup.cred
+		netLockers := make([]dsync.NetLocker, len(setup.endpoints))
+		thisNodeIndex := -1
+		for index, endpoint := range setup.endpoints {
+			netLockers[index] = newLockRPCClient(authConfig{
+				accessKey:       cred.AccessKey,
+				secretKey:       cred.SecretKey,
+				serverAddr:      endpoint.URL.Host,
+				serviceEndpoint: pathutil.Join(minioReservedBucketPath, lockRPCPath, endpoint.URL.Path),
+				secureConn:      setup.secureConn,
+				serviceName:     "Dsync",
+			})
+			if thisNodeIndex == -1 && endpoint.IsLocal {
+				thisNodeIndex = index
+			}
+		}
+
+		if err = dsync.Init(netLockers, thisNodeIndex); err != nil {
+			return err
+		}
+	}
+
+	// Initialize namespace lock for all setup types.
+	globalNSMutex = &nsLockMap{
+		isDistXL: isDistXLSetup,
+		lockMap:  make(map[nsParam]*nsLock),
+		counters: &lockStat{},
+	}
+
+	// Initialize nsLockMap with entry for instrumentation information.
+	// Entries of <volume,path> -> stateInfo of locks
+	globalNSMutex.debugLockMap = make(map[nsParam]*debugLockInfoPerVolumePath)
+
+	return nil
+}
+
 // RWLocker - locker interface extends sync.Locker
 // to introduce RLock, RUnlock.
 type RWLocker interface {

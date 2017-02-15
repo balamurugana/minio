@@ -63,7 +63,10 @@ VERSION:
 
 func migrate() {
 	// Migrate config file
-	err := migrateConfig()
+	configFile, err := getConfigFile()
+	fatalIf(err, "Unable to get configuration file.")
+
+	err = migrateConfig(configFile)
 	fatalIf(err, "Config migration failed.")
 
 	// Migrate other configs here.

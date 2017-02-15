@@ -58,6 +58,15 @@ func mustGetSecretKey() string {
 	return string([]byte(base64.StdEncoding.EncodeToString(keyBytes))[:secretKeyMaxLen])
 }
 
+// Generate a bcrypt hashed key for input secret key.
+func mustGetHashedSecretKey(secretKey string) []byte {
+	hashedSecretKey, err := bcrypt.GenerateFromPassword([]byte(secretKey), bcrypt.DefaultCost)
+	if err != nil {
+		console.Fatalf("Unable to generate hash of secret key. Err: %s.\n", err)
+	}
+	return hashedSecretKey
+}
+
 // isAccessKeyValid - validate access key for right length.
 func isAccessKeyValid(accessKey string) bool {
 	return len(accessKey) >= accessKeyMinLen && len(accessKey) <= accessKeyMaxLen
@@ -75,23 +84,18 @@ type credential struct {
 	secretKeyHash []byte
 }
 
-// Generate a bcrypt hashed key for input secret key.
-func mustGetHashedSecretKey(secretKey string) []byte {
-	hashedSecretKey, err := bcrypt.GenerateFromPassword([]byte(secretKey), bcrypt.DefaultCost)
-	if err != nil {
-		console.Fatalf("Unable to generate secret hash for secret key. Err: %s.\n", err)
-	}
-	return hashedSecretKey
+func (cred credential) IsValid() bool {
+	return isAccessKeyValid(cred.AccessKey) && isSecretKeyValid(cred.SecretKey)
+}
+
+func createCredential(accessKey, secretKey string) credential {
+	secretHash := mustGetHashedSecretKey(secretKey)
+	return credential{accessKey, secretKey, secretHash}
 }
 
 // Initialize a new credential object
 func newCredential() credential {
-	return newCredentialWithKeys(mustGetAccessKey(), mustGetSecretKey())
-}
-
-func newCredentialWithKeys(accessKey, secretKey string) credential {
-	secretHash := mustGetHashedSecretKey(secretKey)
-	return credential{accessKey, secretKey, secretHash}
+	return createCredential(mustGetAccessKey(), mustGetSecretKey())
 }
 
 // Validate incoming auth keys.
@@ -132,7 +136,7 @@ func getCredentialFromEnv() (credential, error) {
 		}
 
 		// Return credential object.
-		return newCredentialWithKeys(accessKey, secretKey), nil
+		return createCredential(accessKey, secretKey), nil
 	}
 
 	return credential{}, nil

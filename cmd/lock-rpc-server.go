@@ -309,3 +309,41 @@ func (l *lockServer) lockMaintenance(interval time.Duration) {
 		}
 	}
 }
+
+// Register distributed NS lock handlers.
+func addLockRPCRouters(setup Setup, mux *router.Router) error {
+	newLockServers := func(endpoints EndpointList) (lockServers []*lockServer) {
+		for _, endpoint := range setup.endpoints {
+			if !endpoint.IsLocal {
+				continue
+			}
+
+			lockerServer := &lockServer{
+				rpcPath: endpoint.URL.Path,
+				mutex:   sync.Mutex{},
+				lockMap: make(map[string][]lockRequesterInfo),
+			}
+
+			lockServers = append(lockServers, lockerServer)
+		}
+
+		return lockServers
+	}
+
+	// Initialize a new set of lock servers.
+	lockServers := newLockServers(setup.endpoints)
+
+	// Start lock maintenance from all lock servers.
+	startLockMaintainence(lockServers)
+
+	for _, lockServer := range lockServers {
+		lockRPCServer := rpc.NewServer()
+		if err := lockRPCServer.RegisterName("Dsync", lockServer); err != nil {
+			return traceError(err)
+		}
+		lockRouter := mux.PathPrefix(minioReservedBucketPath).Subrouter()
+		lockRouter.Path(path.Join(lockRPCPath, lockServer.rpcPath)).Handler(lockRPCServer)
+	}
+
+	return nil
+}

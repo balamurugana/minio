@@ -131,6 +131,25 @@ func newStorageRPC(ep *url.URL) (StorageAPI, error) {
 	return storageAPI, nil
 }
 
+func newStorageRPCClient(endpoint Endpoint, cred credential, secureConn bool) (StorageAPI, error) {
+	if endpoint.Type() != URLEndpointType {
+		return nil, errInvalidArgument
+	}
+
+	// Dial minio rpc storage http path.
+	return &networkStorage{
+		rpcClient: newAuthRPCClient(authConfig{
+			accessKey:        cred.AccessKey,
+			secretKey:        cred.SecretKey,
+			serverAddr:       endpoint.URL.Host,
+			serviceEndpoint:  path.Join(minioReservedBucketPath, storageRPCPath, endpoint.URL.Path),
+			secureConn:       secureConn,
+			serviceName:      "Storage",
+			disableReconnect: true,
+		}),
+	}, nil
+}
+
 // Stringer interface compatible representation of network device.
 func (n *networkStorage) String() string {
 	// Remove the storage RPC path prefix, internal paths are meaningless.

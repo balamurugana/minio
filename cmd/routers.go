@@ -113,3 +113,80 @@ func configureServerHandler(srvCmdConfig serverCmdConfig) (http.Handler, error) 
 	// Register rest of the handlers.
 	return registerHandlers(mux, handlerFns...), nil
 }
+
+// newServerHandler returns http server handler.
+func newServerHandler(setup Setup) (handler http.Handler, err error) {
+	// Initialize router. `SkipClean(true)` stops gorilla/mux from
+	// normalizing URL path minio/minio#3256
+	mux := router.NewRouter().SkipClean(true)
+
+	if setup.setupType == DistXLSetupType {
+		if err = addStorageRPCRouters(setup, mux); err != nil {
+			return handler, err
+		}
+
+		if err = addLockRPCRouters(setup, mux); err != nil {
+			return handler, err
+		}
+
+		// Register S3 peer communication router.
+		if err = registerS3PeerRPCRouter(mux); err != nil {
+			return handler, err
+		}
+
+		if !setup.isBrowserDisabled {
+			if err = registerBrowserPeerRPCRouter(mux); err != nil {
+				return handler, err
+			}
+		}
+	}
+
+	// Add Admin RPC router
+	if err = registerAdminRPCRouter(mux); err != nil {
+		return nil, err
+	}
+
+	// Register web router when its enabled.
+	if !setup.isBrowserDisabled {
+		if err = registerWebRouter(mux); err != nil {
+			return nil, err
+		}
+	}
+
+	// Add Admin router.
+	registerAdminRouter(mux)
+
+	// Add API router.
+	registerAPIRouter(mux)
+
+	// List of some generic handlers which are applied for all incoming requests.
+	var handlerFns = []HandlerFunc{
+		// Network statistics
+		setHTTPStatsHandler,
+		// Limits all requests size to a maximum fixed limit
+		setRequestSizeLimitHandler,
+		// Adds 'crossdomain.xml' policy handler to serve legacy flash clients.
+		setCrossDomainPolicy,
+		// Redirect some pre-defined browser request paths to a static location prefix.
+		setBrowserRedirectHandler,
+		// Validates if incoming request is for restricted buckets.
+		setPrivateBucketHandler,
+		// Adds cache control for all browser requests.
+		setBrowserCacheControlHandler,
+		// Validates all incoming requests to have a valid date header.
+		setTimeValidityHandler,
+		// CORS setting for all browser API requests.
+		setCorsHandler,
+		// Validates all incoming URL resources, for invalid/unsupported
+		// resources client receives a HTTP error.
+		setIgnoreResourcesHandler,
+		// Auth handler verifies incoming authorization headers and
+		// routes them accordingly. Client receives a HTTP error for
+		// invalid/unsupported signatures.
+		setAuthHandler,
+		// Add new handlers here.
+	}
+
+	// Register rest of the handlers.
+	return registerHandlers(mux, handlerFns...), nil
+}
