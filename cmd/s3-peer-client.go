@@ -47,12 +47,12 @@ func makeS3Peers(eps []*url.URL) s3Peers {
 
 	// add local (self) as peer in the array
 	ret = append(ret, s3Peer{
-		globalMinioAddr,
+		setup.serverAddr,
 		&localBucketMetaState{ObjectAPI: newObjectLayerFn},
 	})
-	seenAddr[globalMinioAddr] = true
+	seenAddr[setup.serverAddr] = true
 
-	serverCred := serverConfig.GetCredential()
+	serverCred := setup.serverConfig.GetCredential()
 	// iterate over endpoints to find new remote peers and add
 	// them to ret.
 	for _, ep := range eps {
@@ -67,7 +67,7 @@ func makeS3Peers(eps []*url.URL) s3Peers {
 				secretKey:       serverCred.SecretKey,
 				serverAddr:      ep.Host,
 				serviceEndpoint: path.Join(minioReservedBucketPath, s3Path),
-				secureConn:      globalIsSSL,
+				secureConn:      setup.secureConn,
 				serviceName:     "S3",
 			}
 

@@ -160,10 +160,10 @@ func doesPolicySignatureMatch(formValues map[string]string) APIErrorCode {
 // returns ErrNone if the signature matches.
 func doesPolicySignatureV4Match(formValues map[string]string) APIErrorCode {
 	// Access credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Server region.
-	region := serverConfig.GetRegion()
+	region := setup.serverConfig.GetRegion()
 
 	// Parse credential tag.
 	credHeader, err := parseCredentialHeader("Credential=" + formValues["X-Amz-Credential"])
@@ -200,7 +200,7 @@ func doesPolicySignatureV4Match(formValues map[string]string) APIErrorCode {
 // returns ErrNone if the signature matches.
 func doesPresignedSignatureMatch(hashedPayload string, r *http.Request, region string) APIErrorCode {
 	// Access credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Copy request
 	req := *r
@@ -325,7 +325,7 @@ func doesPresignedSignatureMatch(hashedPayload string, r *http.Request, region s
 // returns ErrNone if signature matches.
 func doesSignatureMatch(hashedPayload string, r *http.Request, region string) APIErrorCode {
 	// Access credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Copy request.
 	req := *r

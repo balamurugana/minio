@@ -151,9 +151,9 @@ func reqSignatureV4Verify(r *http.Request) (s3Error APIErrorCode) {
 		sha256sum = unsignedPayload
 	}
 	if isRequestSignatureV4(r) {
-		return doesSignatureMatch(sha256sum, r, serverConfig.GetRegion())
+		return doesSignatureMatch(sha256sum, r, setup.serverConfig.GetRegion())
 	} else if isRequestPresignedSignatureV4(r) {
-		return doesPresignedSignatureMatch(sha256sum, r, serverConfig.GetRegion())
+		return doesPresignedSignatureMatch(sha256sum, r, setup.serverConfig.GetRegion())
 	}
 	return ErrAccessDenied
 }

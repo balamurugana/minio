@@ -127,9 +127,9 @@ func getCredentialFromEnv() (credential, error) {
 	secretKey := os.Getenv("MINIO_SECRET_KEY")
 
 	// Envs are set globally.
-	globalIsEnvCreds = accessKey != "" && secretKey != ""
+	setup.isEnvCred = accessKey != "" && secretKey != ""
 
-	if globalIsEnvCreds {
+	if setup.isEnvCred {
 		// Validate the env values before proceeding.
 		if err := validateAuthKeys(accessKey, secretKey); err != nil {
 			return credential{}, err

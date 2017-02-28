@@ -46,7 +46,7 @@ func (api objectAPIHandlers) GetBucketNotificationHandler(w http.ResponseWriter,
 		return
 	}
 
-	if s3Error := checkRequestAuthType(r, "", "", serverConfig.GetRegion()); s3Error != ErrNone {
+	if s3Error := checkRequestAuthType(r, "", "", setup.serverConfig.GetRegion()); s3Error != ErrNone {
 		writeErrorResponse(w, s3Error, r.URL)
 		return
 	}
@@ -100,7 +100,7 @@ func (api objectAPIHandlers) PutBucketNotificationHandler(w http.ResponseWriter,
 		return
 	}
 
-	if s3Error := checkRequestAuthType(r, "", "", serverConfig.GetRegion()); s3Error != ErrNone {
+	if s3Error := checkRequestAuthType(r, "", "", setup.serverConfig.GetRegion()); s3Error != ErrNone {
 		writeErrorResponse(w, s3Error, r.URL)
 		return
 	}
@@ -252,7 +252,7 @@ func (api objectAPIHandlers) ListenBucketNotificationHandler(w http.ResponseWrit
 		return
 	}
 
-	if s3Error := checkRequestAuthType(r, "", "", serverConfig.GetRegion()); s3Error != ErrNone {
+	if s3Error := checkRequestAuthType(r, "", "", setup.serverConfig.GetRegion()); s3Error != ErrNone {
 		writeErrorResponse(w, s3Error, r.URL)
 		return
 	}
@@ -292,10 +292,10 @@ func (api objectAPIHandlers) ListenBucketNotificationHandler(w http.ResponseWrit
 	accountARN := fmt.Sprintf(
 		"%s:%s:%s:%s-%s",
 		minioTopic,
-		serverConfig.GetRegion(),
+		setup.serverConfig.GetRegion(),
 		accountID,
 		snsTypeMinio,
-		globalMinioAddr,
+		setup.serverAddr,
 	)
 	var filterRules []filterRule
 
@@ -349,7 +349,7 @@ func (api objectAPIHandlers) ListenBucketNotificationHandler(w http.ResponseWrit
 	// nEventCh
 	lc := listenerConfig{
 		TopicConfig:  *topicCfg,
-		TargetServer: globalMinioAddr,
+		TargetServer: setup.serverAddr,
 	}
 
 	err = AddBucketListenerConfig(bucket, &lc, objAPI)
@@ -385,7 +385,7 @@ func AddBucketListenerConfig(bucket string, lcfg *listenerConfig, objAPI ObjectL
 	defer bucketLock.Unlock()
 
 	// update persistent config if dist XL
-	if globalIsDistXL {
+	if setup.setupType == DistXLSetupType {
 		err := persistListenerConfig(bucket, listenerCfgs, objAPI)
 		if err != nil {
 			errorIf(err, "Error persisting listener config when adding a listener.")
@@ -426,7 +426,7 @@ func RemoveBucketListenerConfig(bucket string, lcfg *listenerConfig, objAPI Obje
 	defer bucketLock.Unlock()
 
 	// update persistent config if dist XL
-	if globalIsDistXL {
+	if setup.setupType == DistXLSetupType {
 		err := persistListenerConfig(bucket, updatedLcfgs, objAPI)
 		if err != nil {
 			errorIf(err, "Error persisting listener config when removing a listener.")

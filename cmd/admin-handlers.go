@@ -24,6 +24,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"time"
 )
@@ -141,7 +142,7 @@ func (adminAPI adminAPIHandlers) ServiceCredentialsHandler(w http.ResponseWriter
 
 	// Avoid setting new credentials when they are already passed
 	// by the environment.
-	if globalIsEnvCreds {
+	if setup.isEnvCred {
 		writeErrorResponse(w, ErrMethodNotAllowed, r.URL)
 		return
 	}
@@ -181,8 +182,8 @@ func (adminAPI adminAPIHandlers) ServiceCredentialsHandler(w http.ResponseWriter
 	}
 
 	// Update local credentials in memory.
-	serverConfig.SetCredential(creds)
-	if err = serverConfig.Save(); err != nil {
+	setup.serverConfig.SetCredential(creds)
+	if err = setup.serverConfig.Save(filepath.Join(setup.configDir, ".minio")); err != nil {
 		writeErrorResponse(w, ErrInternalError, r.URL)
 		return
 	}
@@ -253,7 +254,7 @@ func (adminAPI adminAPIHandlers) ServerInfoHandler(w http.ResponseWriter, r *htt
 	properties := ServerProperties{
 		Version:  Version,
 		CommitID: CommitID,
-		Region:   serverConfig.GetRegion(),
+		Region:   setup.serverConfig.GetRegion(),
 		SQSARN:   arns,
 		Uptime:   uptime,
 	}
@@ -627,7 +628,7 @@ func (adminAPI adminAPIHandlers) HealFormatHandler(w http.ResponseWriter, r *htt
 	// Check if this setup is an erasure code backend, since
 	// heal-format is only applicable to single node XL and
 	// distributed XL setup.
-	if !globalIsXL {
+	if setup.setupType == FSSetupType {
 		writeErrorResponse(w, ErrNotImplemented, r.URL)
 		return
 	}
@@ -641,7 +642,7 @@ func (adminAPI adminAPIHandlers) HealFormatHandler(w http.ResponseWriter, r *htt
 	}
 
 	// Create a new set of storage instances to heal format.json.
-	bootstrapDisks, err := initStorageDisks(globalEndpoints)
+	bootstrapDisks, err := initStorageDisks(setup)
 	if err != nil {
 		writeErrorResponse(w, toAPIErrorCode(err), r.URL)
 		return

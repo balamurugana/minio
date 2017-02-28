@@ -24,7 +24,6 @@ import (
 	"strings"
 	"sync"
 
-	humanize "github.com/dustin/go-humanize"
 	"github.com/minio/minio/pkg/disk"
 	"github.com/minio/minio/pkg/objcache"
 )
@@ -42,10 +41,6 @@ const (
 
 	// Uploads metadata file carries per multipart object metadata.
 	uploadsJSONFile = "uploads.json"
-
-	// Represents the minimum required RAM size before
-	// we enable caching.
-	minRAMSize = 8 * humanize.GiByte
 
 	// Maximum erasure blocks.
 	maxErasureBlocks = 16

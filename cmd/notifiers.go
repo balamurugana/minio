@@ -59,7 +59,7 @@ func isAMQPQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypeAMQP {
 		return false
 	}
-	amqpL := serverConfig.Notify.GetAMQPByID(sqsArn.AccountID)
+	amqpL := setup.serverConfig.Notify.GetAMQPByID(sqsArn.AccountID)
 	if !amqpL.Enable {
 		return false
 	}
@@ -78,7 +78,7 @@ func isNATSQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypeNATS {
 		return false
 	}
-	natsL := serverConfig.Notify.GetNATSByID(sqsArn.AccountID)
+	natsL := setup.serverConfig.Notify.GetNATSByID(sqsArn.AccountID)
 	if !natsL.Enable {
 		return false
 	}
@@ -97,7 +97,7 @@ func isWebhookQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypeWebhook {
 		return false
 	}
-	rNotify := serverConfig.Notify.GetWebhookByID(sqsArn.AccountID)
+	rNotify := setup.serverConfig.Notify.GetWebhookByID(sqsArn.AccountID)
 	if !rNotify.Enable {
 		return false
 	}
@@ -109,7 +109,7 @@ func isRedisQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypeRedis {
 		return false
 	}
-	rNotify := serverConfig.Notify.GetRedisByID(sqsArn.AccountID)
+	rNotify := setup.serverConfig.Notify.GetRedisByID(sqsArn.AccountID)
 	if !rNotify.Enable {
 		return false
 	}
@@ -128,7 +128,7 @@ func isElasticQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypeElastic {
 		return false
 	}
-	esNotify := serverConfig.Notify.GetElasticSearchByID(sqsArn.AccountID)
+	esNotify := setup.serverConfig.Notify.GetElasticSearchByID(sqsArn.AccountID)
 	if !esNotify.Enable {
 		return false
 	}
@@ -146,7 +146,7 @@ func isPostgreSQLQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypePostgreSQL {
 		return false
 	}
-	pgNotify := serverConfig.Notify.GetPostgreSQLByID(sqsArn.AccountID)
+	pgNotify := setup.serverConfig.Notify.GetPostgreSQLByID(sqsArn.AccountID)
 	if !pgNotify.Enable {
 		return false
 	}
@@ -164,7 +164,7 @@ func isKafkaQueue(sqsArn arnSQS) bool {
 	if sqsArn.Type != queueTypeKafka {
 		return false
 	}
-	kafkaNotifyCfg := serverConfig.Notify.GetKafkaByID(sqsArn.AccountID)
+	kafkaNotifyCfg := setup.serverConfig.Notify.GetKafkaByID(sqsArn.AccountID)
 	if !kafkaNotifyCfg.Enable {
 		return false
 	}

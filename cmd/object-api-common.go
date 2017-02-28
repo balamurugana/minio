@@ -131,10 +131,10 @@ func isLocalStorage(ep *url.URL) bool {
 	if ep.Host == "" {
 		return true
 	}
-	if globalMinioHost != "" && globalMinioPort != "" {
+	if setup.serverAddr != "" {
 		// if --address host:port was specified for distXL we short
 		// circuit only the endPoint that matches host:port
-		if net.JoinHostPort(globalMinioHost, globalMinioPort) == ep.Host {
+		if setup.serverAddr == ep.Host {
 			return true
 		}
 		return false
@@ -208,11 +208,17 @@ func getPath(ep *url.URL) string {
 }
 
 // Depending on the disk type network or local, initialize storage API.
-func newStorageAPI(ep *url.URL) (storage StorageAPI, err error) {
-	if isLocalStorage(ep) {
-		return newPosix(getPath(ep))
+func newStorageAPI(endpoint Endpoint) (StorageAPI, error) {
+	if endpoint.IsLocal {
+		path := endpoint.Value
+		if endpoint.Type() == URLEndpointType {
+			path = endpoint.URL.Path
+		}
+
+		return newPosix(path)
 	}
-	return newStorageRPC(ep)
+
+	return newStorageRPCClient(endpoint, setup.cred, setup.secureConn)
 }
 
 var initMetaVolIgnoredErrs = append(baseIgnoredErrs, errVolumeExists)

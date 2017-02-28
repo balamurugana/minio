@@ -43,10 +43,10 @@ const (
 // getChunkSignature - get chunk signature.
 func getChunkSignature(seedSignature string, date time.Time, hashedChunk string) string {
 	// Access credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Server region.
-	region := serverConfig.GetRegion()
+	region := setup.serverConfig.GetRegion()
 
 	// Calculate string to sign.
 	stringToSign := signV4ChunkedAlgorithm + "\n" +
@@ -71,10 +71,10 @@ func getChunkSignature(seedSignature string, date time.Time, hashedChunk string)
 // error while parsing and validating.
 func calculateSeedSignature(r *http.Request) (signature string, date time.Time, errCode APIErrorCode) {
 	// Access credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Server region.
-	region := serverConfig.GetRegion()
+	region := setup.serverConfig.GetRegion()
 
 	// Copy request.
 	req := *r

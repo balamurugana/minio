@@ -203,9 +203,6 @@ func minioInit(ctx *cli.Context) {
 	// Sets new config directory.
 	setGlobalConfigPath(globalConfigDir)
 
-	// Is TLS configured?.
-	globalIsSSL = isSSL()
-
 	// Initialize minio server config.
 	initConfig()
 

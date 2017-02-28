@@ -51,7 +51,7 @@ func getListenIPs(serverAddr string) (hosts []string, port string, err error) {
 func finalizeAPIEndpoints(addr string) (endPoints []string, err error) {
 	// Verify current scheme.
 	scheme := httpScheme
-	if globalIsSSL {
+	if setup.secureConn {
 		scheme = httpsScheme
 	}
 

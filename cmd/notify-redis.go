@@ -83,7 +83,7 @@ func dialRedis(rNotify redisNotify) (*redis.Pool, error) {
 }
 
 func newRedisNotify(accountID string) (*logrus.Logger, error) {
-	rNotify := serverConfig.Notify.GetRedisByID(accountID)
+	rNotify := setup.serverConfig.Notify.GetRedisByID(accountID)
 
 	// Dial redis.
 	rPool, err := dialRedis(rNotify)

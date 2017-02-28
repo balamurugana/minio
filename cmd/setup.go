@@ -22,6 +22,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/minio/minio-go/pkg/set"
 )
@@ -62,6 +63,7 @@ type Setup struct {
 	configDir   string
 	profileMode string
 	cred        credential
+	isEnvCred   bool
 	profiler    interface {
 		Stop()
 	}
@@ -75,6 +77,8 @@ type Setup struct {
 	publicCerts    []*x509.Certificate
 	rootCAs        *x509.CertPool
 	secureConn     bool
+
+	bootTime time.Time
 }
 
 // NewSetup - creates new setup based on given args.

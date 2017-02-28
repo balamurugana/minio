@@ -91,7 +91,7 @@ func (s *adminCmd) ReInitDisks(args *AuthRPCArgs, reply *AuthRPCReply) error {
 		return err
 	}
 
-	if !globalIsXL {
+	if setup.setupType == FSSetupType {
 		return errUnsupportedBackend
 	}
 
@@ -99,7 +99,7 @@ func (s *adminCmd) ReInitDisks(args *AuthRPCArgs, reply *AuthRPCReply) error {
 	objLayer := newObjectLayerFn()
 
 	// Initialize new disks to include the newly formatted disks.
-	bootstrapDisks, err := initStorageDisks(globalEndpoints)
+	bootstrapDisks, err := initStorageDisks(setup)
 	if err != nil {
 		return err
 	}
@@ -127,7 +127,7 @@ func (s *adminCmd) Uptime(args *AuthRPCArgs, reply *UptimeReply) error {
 		return err
 	}
 
-	if globalBootTime.IsZero() {
+	if setup.bootTime.IsZero() {
 		return errServerNotInitialized
 	}
 
@@ -136,7 +136,7 @@ func (s *adminCmd) Uptime(args *AuthRPCArgs, reply *UptimeReply) error {
 	// https://github.com/golang/go/issues/12914. This is expected
 	// to be fixed by go1.9.
 	*reply = UptimeReply{
-		Uptime: time.Now().UTC().Sub(globalBootTime),
+		Uptime: time.Now().UTC().Sub(setup.bootTime),
 	}
 
 	return nil

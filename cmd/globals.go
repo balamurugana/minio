@@ -17,13 +17,10 @@
 package cmd
 
 import (
-	"crypto/x509"
-	"net/url"
 	"runtime"
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
-	"github.com/fatih/color"
 	"github.com/minio/cli"
 	"github.com/minio/mc/pkg/console"
 	"github.com/minio/minio/pkg/objcache"
@@ -56,8 +53,19 @@ const (
 	// Limit memory allocation to store multipart data
 	maxFormMemory = int64(5 * humanize.MiByte)
 
+	// Represents the minimum required RAM size before
+	// we enable caching.
+	minRAMSize = 8 * humanize.GiByte
+
 	// The maximum allowed difference between the request generation time and the server processing time
 	globalMaxSkewTime = 15 * time.Minute
+
+	// Maximum size of internal objects parts
+	globalPutPartSize = int64(64 * 1024 * 1024)
+
+	// Keeps the connection active by waiting for following amount of time.
+	// Primarily used in ListenBucketNotification.
+	globalSNSConnAlive = 5 * time.Second
 )
 
 var (
@@ -65,47 +73,18 @@ var (
 	globalConfigDir = mustGetConfigPath() // config-dir flag set via command line
 	// Add new global flags here.
 
-	// Indicates if the running minio server is distributed setup.
-	globalIsDistXL = false
-
-	// Indicates if the running minio server is an erasure-code backend.
-	globalIsXL = false
-
-	// This flag is set to 'true' by default
-	globalIsBrowserEnabled = true
 	// This flag is set to 'true' when MINIO_BROWSER env is set.
 	globalIsEnvBrowser = false
-	// Set to true if credentials were passed from env, default is false.
-	globalIsEnvCreds = false
 
 	// Maximum cache size. Defaults to disabled.
 	// Caching is enabled only for RAM size > 8GiB.
 	globalMaxCacheSize = uint64(0)
 
-	// Maximum size of internal objects parts
-	globalPutPartSize = int64(64 * 1024 * 1024)
-
 	// Cache expiry.
 	globalCacheExpiry = objcache.DefaultExpiry
 
-	// Minio local server address (in `host:port` format)
-	globalMinioAddr = ""
-	// Minio default port, can be changed through command line.
-	globalMinioPort = "9000"
-	// Holds the host that was passed using --address
-	globalMinioHost = ""
-
-	// Holds the list of API endpoints for a given server.
-	globalAPIEndpoints = []string{}
-
 	// Peer communication struct
 	globalS3Peers = s3Peers{}
-
-	// CA root certificates, a nil value means system certs pool will be used
-	globalRootCAs *x509.CertPool
-
-	// IsSSL indicates if the server is configured with SSL.
-	globalIsSSL bool
 
 	// List of admin peers.
 	globalAdminPeers = adminPeers{}
@@ -113,31 +92,13 @@ var (
 	// Minio server user agent string.
 	globalServerUserAgent = "Minio/" + ReleaseTag + " (" + runtime.GOOS + "; " + runtime.GOARCH + ")"
 
-	// url.URL endpoints of disks that belong to the object storage.
-	globalEndpoints = []*url.URL{}
-
 	// Global server's network statistics
 	globalConnStats = newConnStats()
 
 	// Global HTTP request statisitics
 	globalHTTPStats = newHTTPStats()
 
-	// Time when object layer was initialized on start up.
-	globalBootTime time.Time
-
 	// Add new variable global values here.
-)
-
-var (
-	// Keeps the connection active by waiting for following amount of time.
-	// Primarily used in ListenBucketNotification.
-	globalSNSConnAlive = 5 * time.Second
-)
-
-// global colors.
-var (
-	colorBold = color.New(color.Bold).SprintFunc()
-	colorBlue = color.New(color.FgBlue).SprintfFunc()
 )
 
 // Parse command arguments and set global variables accordingly

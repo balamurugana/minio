@@ -55,7 +55,7 @@ func dialElastic(esNotify elasticSearchNotify) (*elastic.Client, error) {
 }
 
 func newElasticNotify(accountID string) (*logrus.Logger, error) {
-	esNotify := serverConfig.Notify.GetElasticSearchByID(accountID)
+	esNotify := setup.serverConfig.Notify.GetElasticSearchByID(accountID)
 
 	// Dial to elastic search.
 	client, err := dialElastic(esNotify)

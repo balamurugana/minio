@@ -59,7 +59,7 @@ func configureServerHandler(srvCmdConfig serverCmdConfig) (http.Handler, error) 
 	mux := router.NewRouter().SkipClean(true)
 
 	// Initialize distributed NS lock.
-	if globalIsDistXL {
+	if setup.setupType == DistXLSetupType {
 		registerDistXLRouters(mux, srvCmdConfig)
 	}
 
@@ -70,7 +70,7 @@ func configureServerHandler(srvCmdConfig serverCmdConfig) (http.Handler, error) 
 	}
 
 	// Register web router when its enabled.
-	if globalIsBrowserEnabled {
+	if !setup.isBrowserDisabled {
 		if err := registerWebRouter(mux); err != nil {
 			return nil, err
 		}

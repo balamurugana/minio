@@ -104,10 +104,10 @@ func checkARN(arn, arnType string) APIErrorCode {
 	if !strings.HasPrefix(arn, arnType) {
 		return ErrARNNotification
 	}
-	if !strings.HasPrefix(arn, arnType+serverConfig.GetRegion()+":") {
+	if !strings.HasPrefix(arn, arnType+setup.serverConfig.GetRegion()+":") {
 		return ErrRegionNotification
 	}
-	account := strings.SplitN(strings.TrimPrefix(arn, arnType+serverConfig.GetRegion()+":"), ":", 2)
+	account := strings.SplitN(strings.TrimPrefix(arn, arnType+setup.serverConfig.GetRegion()+":"), ":", 2)
 	switch len(account) {
 	case 1:
 		// This means ARN is malformed, account should have min of 2elements.
@@ -133,27 +133,27 @@ func isValidQueueID(queueARN string) bool {
 	// Is Queue identifier valid?.
 
 	if isAMQPQueue(sqsARN) { // AMQP eueue.
-		amqpN := serverConfig.Notify.GetAMQPByID(sqsARN.AccountID)
+		amqpN := setup.serverConfig.Notify.GetAMQPByID(sqsARN.AccountID)
 		return amqpN.Enable && amqpN.URL != ""
 	} else if isNATSQueue(sqsARN) {
-		natsN := serverConfig.Notify.GetNATSByID(sqsARN.AccountID)
+		natsN := setup.serverConfig.Notify.GetNATSByID(sqsARN.AccountID)
 		return natsN.Enable && natsN.Address != ""
 	} else if isElasticQueue(sqsARN) { // Elastic queue.
-		elasticN := serverConfig.Notify.GetElasticSearchByID(sqsARN.AccountID)
+		elasticN := setup.serverConfig.Notify.GetElasticSearchByID(sqsARN.AccountID)
 		return elasticN.Enable && elasticN.URL != ""
 	} else if isRedisQueue(sqsARN) { // Redis queue.
-		redisN := serverConfig.Notify.GetRedisByID(sqsARN.AccountID)
+		redisN := setup.serverConfig.Notify.GetRedisByID(sqsARN.AccountID)
 		return redisN.Enable && redisN.Addr != ""
 	} else if isPostgreSQLQueue(sqsARN) {
-		pgN := serverConfig.Notify.GetPostgreSQLByID(sqsARN.AccountID)
+		pgN := setup.serverConfig.Notify.GetPostgreSQLByID(sqsARN.AccountID)
 		// Postgres can work with only default conn. info.
 		return pgN.Enable
 	} else if isKafkaQueue(sqsARN) {
-		kafkaN := serverConfig.Notify.GetKafkaByID(sqsARN.AccountID)
+		kafkaN := setup.serverConfig.Notify.GetKafkaByID(sqsARN.AccountID)
 		return (kafkaN.Enable && len(kafkaN.Brokers) > 0 &&
 			kafkaN.Topic != "")
 	} else if isWebhookQueue(sqsARN) {
-		webhookN := serverConfig.Notify.GetWebhookByID(sqsARN.AccountID)
+		webhookN := setup.serverConfig.Notify.GetWebhookByID(sqsARN.AccountID)
 		return webhookN.Enable && webhookN.Endpoint != ""
 	}
 	return false
@@ -248,10 +248,10 @@ func validateNotificationConfig(nConfig notificationConfig) APIErrorCode {
 // - webhook
 func unmarshalSqsARN(queueARN string) (mSqs arnSQS) {
 	mSqs = arnSQS{}
-	if !strings.HasPrefix(queueARN, minioSqs+serverConfig.GetRegion()+":") {
+	if !strings.HasPrefix(queueARN, minioSqs+setup.serverConfig.GetRegion()+":") {
 		return mSqs
 	}
-	sqsType := strings.TrimPrefix(queueARN, minioSqs+serverConfig.GetRegion()+":")
+	sqsType := strings.TrimPrefix(queueARN, minioSqs+setup.serverConfig.GetRegion()+":")
 	switch {
 	case hasSuffix(sqsType, queueTypeAMQP):
 		mSqs.Type = queueTypeAMQP

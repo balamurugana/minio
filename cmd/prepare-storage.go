@@ -275,16 +275,13 @@ func retryFormattingXLDisks(firstDisk bool, endpoints []*url.URL, storageDisks [
 }
 
 // Initialize storage disks based on input arguments.
-func initStorageDisks(endpoints []*url.URL) ([]StorageAPI, error) {
+func initStorageDisks(setup Setup) ([]StorageAPI, error) {
 	// Bootstrap disks.
-	storageDisks := make([]StorageAPI, len(endpoints))
-	for index, ep := range endpoints {
-		if ep == nil {
-			return nil, errInvalidArgument
-		}
+	storageDisks := make([]StorageAPI, len(setup.endpoints))
+	for index, endpoint := range setup.endpoints {
 		// Intentionally ignore disk not found errors. XL is designed
 		// to handle these errors internally.
-		storage, err := newStorageAPI(ep)
+		storage, err := newStorageAPI(endpoint)
 		if err != nil && err != errDiskNotFound {
 			return nil, err
 		}

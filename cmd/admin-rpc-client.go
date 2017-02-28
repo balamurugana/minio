@@ -112,11 +112,11 @@ func (rc remoteAdminClient) ReInitDisks() error {
 // Uptime - Returns the uptime of this server. Timestamp is taken
 // after object layer is initialized.
 func (lc localAdminClient) Uptime() (time.Duration, error) {
-	if globalBootTime.IsZero() {
+	if setup.bootTime.IsZero() {
 		return time.Duration(0), errServerNotInitialized
 	}
 
-	return time.Now().UTC().Sub(globalBootTime), nil
+	return time.Now().UTC().Sub(setup.bootTime), nil
 }
 
 // Uptime - returns the uptime of the server to which the RPC call is made.
@@ -226,12 +226,12 @@ func makeAdminPeers(eps []*url.URL) adminPeers {
 
 	// add local (self) as peer in the array
 	servicePeers = append(servicePeers, adminPeer{
-		globalMinioAddr,
+		setup.serverAddr,
 		localAdminClient{},
 	})
-	seenAddr[globalMinioAddr] = true
+	seenAddr[setup.serverAddr] = true
 
-	serverCred := serverConfig.GetCredential()
+	serverCred := setup.serverConfig.GetCredential()
 	// iterate over endpoints to find new remote peers and add
 	// them to ret.
 	for _, ep := range eps {
@@ -245,7 +245,7 @@ func makeAdminPeers(eps []*url.URL) adminPeers {
 				accessKey:       serverCred.AccessKey,
 				secretKey:       serverCred.SecretKey,
 				serverAddr:      ep.Host,
-				secureConn:      globalIsSSL,
+				secureConn:      setup.secureConn,
 				serviceEndpoint: path.Join(minioReservedBucketPath, adminPath),
 				serviceName:     "Admin",
 			}
@@ -412,8 +412,8 @@ func getPeerUptimes(peers adminPeers) (time.Duration, error) {
 	// In a single node Erasure or FS backend setup the uptime of
 	// the setup is the uptime of the single minio server
 	// instance.
-	if !globalIsDistXL {
-		return time.Now().UTC().Sub(globalBootTime), nil
+	if setup.setupType != DistXLSetupType {
+		return time.Now().UTC().Sub(setup.bootTime), nil
 	}
 
 	uptimes := make(uptimeSlice, len(peers))
@@ -462,7 +462,7 @@ func getPeerUptimes(peers adminPeers) (time.Duration, error) {
 // getPeerConfig - Fetches config.json from all nodes in the setup and
 // returns the one that occurs in a majority of them.
 func getPeerConfig(peers adminPeers) ([]byte, error) {
-	if !globalIsDistXL {
+	if setup.setupType != DistXLSetupType {
 		return peers[0].cmdRunner.GetConfig()
 	}
 

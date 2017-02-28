@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -395,7 +396,7 @@ func (web *webAPIHandlers) SetAuth(r *http.Request, args *SetAuthArgs, reply *Se
 	}
 
 	// If creds are set through ENV disallow changing credentials.
-	if globalIsEnvCreds {
+	if setup.isEnvCred {
 		return toJSONError(errChangeCredNotAllowed)
 	}
 
@@ -413,11 +414,11 @@ func (web *webAPIHandlers) SetAuth(r *http.Request, args *SetAuthArgs, reply *Se
 	errsMap := updateCredsOnPeers(creds)
 
 	// Update local credentials
-	serverConfig.SetCredential(creds)
+	setup.serverConfig.SetCredential(creds)
 
 	// Persist updated credentials.
-	if err := serverConfig.Save(); err != nil {
-		errsMap[globalMinioAddr] = err
+	if err := setup.serverConfig.Save(filepath.Join(setup.configDir, ".minio")); err != nil {
+		errsMap[setup.serverAddr] = err
 	}
 
 	// Log all the peer related error messages, and populate the
@@ -430,7 +431,7 @@ func (web *webAPIHandlers) SetAuth(r *http.Request, args *SetAuthArgs, reply *Se
 	}
 
 	// If we were unable to update locally, we return an error to the user/browser.
-	if errsMap[globalMinioAddr] != nil {
+	if errsMap[setup.serverAddr] != nil {
 		// Since the error message may be very long to display
 		// on the browser, we tell the user to check the
 		// server logs.
@@ -468,7 +469,7 @@ func (web *webAPIHandlers) GetAuth(r *http.Request, args *WebGenericArgs, reply 
 	if !isHTTPRequestValid(r) {
 		return toJSONError(errAuthentication)
 	}
-	creds := serverConfig.GetCredential()
+	creds := setup.serverConfig.GetCredential()
 	reply.AccessKey = creds.AccessKey
 	reply.SecretKey = creds.SecretKey
 	reply.UIVersion = browser.UIVersion
@@ -846,8 +847,8 @@ func (web *webAPIHandlers) PresignedGet(r *http.Request, args *PresignedGetArgs,
 
 // Returns presigned url for GET method.
 func presignedGet(host, bucket, object string, expiry int64) string {
-	cred := serverConfig.GetCredential()
-	region := serverConfig.GetRegion()
+	cred := setup.serverConfig.GetCredential()
+	region := setup.serverConfig.GetRegion()
 
 	accessKey := cred.AccessKey
 	secretKey := cred.SecretKey

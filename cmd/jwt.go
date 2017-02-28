@@ -59,7 +59,7 @@ func authenticateJWT(accessKey, secretKey string, expiry time.Duration) (string,
 		return "", errInvalidSecretKeyLength
 	}
 
-	serverCred := serverConfig.GetCredential()
+	serverCred := setup.serverConfig.GetCredential()
 
 	// Validate access key.
 	if accessKey != serverCred.AccessKey {
@@ -102,7 +102,7 @@ func keyFuncCallback(jwtToken *jwtgo.Token) (interface{}, error) {
 		return nil, fmt.Errorf("Unexpected signing method: %v", jwtToken.Header["alg"])
 	}
 
-	return []byte(serverConfig.GetCredential().SecretKey), nil
+	return []byte(setup.serverConfig.GetCredential().SecretKey), nil
 }
 
 func isAuthTokenValid(tokenString string) bool {

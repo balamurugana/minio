@@ -78,7 +78,7 @@ func (rpcClient *RPCClient) dial() (netRPCClient *rpc.Client, err error) {
 		}
 
 		// ServerName in tls.Config needs to be specified to support SNI certificates.
-		conn, err = tls.Dial("tcp", rpcClient.serverAddr, &tls.Config{ServerName: hostname, RootCAs: globalRootCAs})
+		conn, err = tls.Dial("tcp", rpcClient.serverAddr, &tls.Config{ServerName: hostname, RootCAs: setup.rootCAs})
 	} else {
 		// Dial with a timeout.
 		conn, err = net.DialTimeout("tcp", rpcClient.serverAddr, defaultDialTimeout)

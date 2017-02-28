@@ -119,7 +119,7 @@ func (h redirectHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Re-direct only for JWT and anonymous requests from browser.
 	if aType == authTypeJWT || aType == authTypeAnonymous {
 		// Re-direction is handled specifically for browser requests.
-		if guessIsBrowserReq(r) && globalIsBrowserEnabled {
+		if guessIsBrowserReq(r) && !setup.isBrowserDisabled {
 			// Fetch the redirect location if any.
 			redirectLocation := getRedirectLocation(r.URL.Path)
 			if redirectLocation != "" {
@@ -142,7 +142,7 @@ func setBrowserCacheControlHandler(h http.Handler) http.Handler {
 }
 
 func (h cacheControlHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == httpGET && guessIsBrowserReq(r) && globalIsBrowserEnabled {
+	if r.Method == httpGET && guessIsBrowserReq(r) && !setup.isBrowserDisabled {
 		// For all browser requests set appropriate Cache-Control policies
 		if hasPrefix(r.URL.Path, minioReservedBucketPath+"/") {
 			if hasSuffix(r.URL.Path, ".js") || r.URL.Path == minioReservedBucketPath+"/favicon.ico" {

@@ -73,8 +73,8 @@ func getHealEndpoint(tls bool, firstEndpoint *url.URL) (cEndpoint *url.URL) {
 		Scheme: scheme,
 	}
 	// Bind to `--address host:port` was specified.
-	if globalMinioHost != "" {
-		cEndpoint.Host = net.JoinHostPort(globalMinioHost, globalMinioPort)
+	if setup.serverAddr != "" {
+		cEndpoint.Host = net.JoinHostPort(setup.serverAddr, setup.serverAddr)
 		return cEndpoint
 	}
 	// For distributed XL setup.
@@ -83,12 +83,12 @@ func getHealEndpoint(tls bool, firstEndpoint *url.URL) (cEndpoint *url.URL) {
 		return cEndpoint
 	}
 	// For single node XL setup, we need to find the endpoint.
-	cEndpoint.Host = globalMinioAddr
+	cEndpoint.Host = setup.serverAddr
 	// Fetch all the listening ips. For single node XL we
 	// just use the first host.
 	hosts, _, err := getListenIPs(cEndpoint.Host)
 	if err == nil {
-		cEndpoint.Host = net.JoinHostPort(hosts[0], globalMinioPort)
+		cEndpoint.Host = net.JoinHostPort(hosts[0], setup.serverAddr)
 	}
 	return cEndpoint
 }

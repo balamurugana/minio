@@ -75,7 +75,7 @@ func dialKafka(kn kafkaNotify) (kafkaConn, error) {
 }
 
 func newKafkaNotify(accountID string) (*logrus.Logger, error) {
-	kafkaNotifyCfg := serverConfig.Notify.GetKafkaByID(accountID)
+	kafkaNotifyCfg := setup.serverConfig.Notify.GetKafkaByID(accountID)
 
 	// Try connecting to the configured Kafka broker(s).
 	kc, err := dialKafka(kafkaNotifyCfg)

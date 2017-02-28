@@ -18,6 +18,7 @@ package cmd
 
 import (
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -68,10 +69,10 @@ func (br *browserPeerAPIHandlers) SetAuthPeer(args SetAuthPeerArgs, reply *AuthR
 	}
 
 	// Update credentials in memory
-	serverConfig.SetCredential(args.Creds)
+	setup.serverConfig.SetCredential(args.Creds)
 
 	// Save credentials to config file
-	if err := serverConfig.Save(); err != nil {
+	if err := setup.serverConfig.Save(filepath.Join(setup.configDir, ".minio")); err != nil {
 		errorIf(err, "Error updating config file with new credentials sent from browser RPC.")
 		return err
 	}
@@ -91,7 +92,7 @@ func updateCredsOnPeers(creds credential) map[string]error {
 	errs := make([]error, len(peers))
 	var wg sync.WaitGroup
 
-	serverCred := serverConfig.GetCredential()
+	serverCred := setup.serverConfig.GetCredential()
 	// Launch go routines to send request to each peer in parallel.
 	for ix := range peers {
 		wg.Add(1)
@@ -100,7 +101,7 @@ func updateCredsOnPeers(creds credential) map[string]error {
 
 			// Exclude self to avoid race with
 			// invalidating the RPC token.
-			if peers[ix] == globalMinioAddr {
+			if peers[ix] == setup.serverAddr {
 				errs[ix] = nil
 				return
 			}
@@ -110,7 +111,7 @@ func updateCredsOnPeers(creds credential) map[string]error {
 				accessKey:       serverCred.AccessKey,
 				secretKey:       serverCred.SecretKey,
 				serverAddr:      peers[ix],
-				secureConn:      globalIsSSL,
+				secureConn:      setup.secureConn,
 				serviceEndpoint: path.Join(minioReservedBucketPath, browserPeerPath),
 				serviceName:     "BrowserPeer",
 			})

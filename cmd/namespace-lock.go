@@ -79,7 +79,7 @@ type RWLocker interface {
 // Initialize distributed locking only in case of distributed setup.
 // Returns if the setup is distributed or not on success.
 func initDsyncNodes(eps []*url.URL) error {
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 	// Initialize rpc lock client information only if this instance is a distributed setup.
 	clnts := make([]dsync.NetLocker, len(eps))
 	myNode := -1
@@ -92,7 +92,7 @@ func initDsyncNodes(eps []*url.URL) error {
 			secretKey:       cred.SecretKey,
 			serverAddr:      ep.Host,
 			serviceEndpoint: pathutil.Join(minioReservedBucketPath, lockRPCPath, getPath(ep)),
-			secureConn:      globalIsSSL,
+			secureConn:      setup.secureConn,
 			serviceName:     "Dsync",
 		})
 		if isLocalStorage(ep) && myNode == -1 {

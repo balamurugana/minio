@@ -24,6 +24,7 @@ import (
 	"time"
 
 	humanize "github.com/dustin/go-humanize"
+	"github.com/fatih/color"
 	"github.com/minio/mc/pkg/console"
 )
 
@@ -34,6 +35,12 @@ const (
 	jsQuickStartGuide   = "https://docs.minio.io/docs/javascript-client-quickstart-guide"
 	javaQuickStartGuide = "https://docs.minio.io/docs/java-client-quickstart-guide"
 	pyQuickStartGuide   = "https://docs.minio.io/docs/python-client-quickstart-guide"
+)
+
+// global colors.
+var (
+	colorBold = color.New(color.Bold).SprintFunc()
+	colorBlue = color.New(color.FgBlue).SprintfFunc()
 )
 
 // generates format string depending on the string length and padding.
@@ -67,20 +74,18 @@ func printStartupMessage(apiEndPoints []string) {
 
 	// SSL is configured reads certification chain, prints
 	// authority and expiry.
-	if globalIsSSL {
-		certs, err := readCertificateChain()
-		fatalIf(err, "Unable to read certificate chain.")
-		printCertificateMsg(certs)
+	if setup.publicCerts != nil {
+		printCertificateMsg(setup.publicCerts)
 	}
 }
 
 // Prints common server startup message. Prints credential, region and browser access.
 func printServerCommonMsg(apiEndpoints []string) {
 	// Get saved credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Get saved region.
-	region := serverConfig.GetRegion()
+	region := setup.serverConfig.GetRegion()
 
 	apiEndpointStr := strings.Join(apiEndpoints, "  ")
 	// Colorize the message and print.
@@ -116,7 +121,7 @@ func printEventNotifiers() {
 // and custom platform specific message.
 func printCLIAccessMsg(endPoint string) {
 	// Get saved credentials.
-	cred := serverConfig.GetCredential()
+	cred := setup.serverConfig.GetCredential()
 
 	// Configure 'mc', following block prints platform specific information for minio client.
 	console.Println(colorBlue("\nCommand-line Access: ") + mcQuickStartGuide)

@@ -89,10 +89,10 @@ type eventData struct {
 // input request metadata which completed successfully.
 func newNotificationEvent(event eventData) NotificationEvent {
 	// Fetch the region.
-	region := serverConfig.GetRegion()
+	region := setup.serverConfig.GetRegion()
 
 	// Fetch the credentials.
-	creds := serverConfig.GetCredential()
+	creds := setup.serverConfig.GetCredential()
 
 	// Time when Minio finished processing the request.
 	eventTime := time.Now().UTC()
@@ -100,10 +100,7 @@ func newNotificationEvent(event eventData) NotificationEvent {
 	// API endpoint is captured here to be returned back
 	// to the client for it to differentiate from which
 	// server the request came from.
-	var apiEndpoint string
-	if len(globalAPIEndpoints) >= 1 {
-		apiEndpoint = globalAPIEndpoints[0]
-	}
+	apiEndpoint := setup.endpoints[0].Value
 
 	// Fetch a hexadecimal representation of event time in nano seconds.
 	uniqueID := mustGetRequestID(eventTime)
@@ -379,7 +376,7 @@ func loadListenerConfig(bucket string, objAPI ObjectLayer) ([]listenerConfig, er
 	// in single node mode, there are no peers, so in this case
 	// there is no configuration to load, as any previously
 	// connected listen clients have been disconnected
-	if !globalIsDistXL {
+	if setup.setupType != DistXLSetupType {
 		return nil, nil
 	}
 
@@ -543,7 +540,7 @@ func addQueueTarget(queueTargets map[string]*logrus.Logger,
 	newTargetFunc func(string) (*logrus.Logger, error)) (string, error) {
 
 	// Construct the queue ARN for AMQP.
-	queueARN := minioSqs + serverConfig.GetRegion() + ":" + accountID + ":" + queueType
+	queueARN := minioSqs + setup.serverConfig.GetRegion() + ":" + accountID + ":" + queueType
 
 	// Queue target if already initialized we move to the next ARN.
 	if _, ok := queueTargets[queueARN]; ok {
@@ -566,7 +563,7 @@ func addQueueTarget(queueTargets map[string]*logrus.Logger,
 func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	queueTargets := make(map[string]*logrus.Logger)
 	// Load all amqp targets, initialize their respective loggers.
-	for accountID, amqpN := range serverConfig.Notify.GetAMQP() {
+	for accountID, amqpN := range setup.serverConfig.Notify.GetAMQP() {
 		if !amqpN.Enable {
 			continue
 		}
@@ -585,7 +582,7 @@ func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	}
 
 	// Load all nats targets, initialize their respective loggers.
-	for accountID, natsN := range serverConfig.Notify.GetNATS() {
+	for accountID, natsN := range setup.serverConfig.Notify.GetNATS() {
 		if !natsN.Enable {
 			continue
 		}
@@ -604,7 +601,7 @@ func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	}
 
 	// Load redis targets, initialize their respective loggers.
-	for accountID, redisN := range serverConfig.Notify.GetRedis() {
+	for accountID, redisN := range setup.serverConfig.Notify.GetRedis() {
 		if !redisN.Enable {
 			continue
 		}
@@ -623,7 +620,7 @@ func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	}
 
 	// Load Webhook targets, initialize their respective loggers.
-	for accountID, webhookN := range serverConfig.Notify.GetWebhook() {
+	for accountID, webhookN := range setup.serverConfig.Notify.GetWebhook() {
 		if !webhookN.Enable {
 			continue
 		}
@@ -634,7 +631,7 @@ func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	}
 
 	// Load elastic targets, initialize their respective loggers.
-	for accountID, elasticN := range serverConfig.Notify.GetElasticSearch() {
+	for accountID, elasticN := range setup.serverConfig.Notify.GetElasticSearch() {
 		if !elasticN.Enable {
 			continue
 		}
@@ -653,7 +650,7 @@ func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	}
 
 	// Load PostgreSQL targets, initialize their respective loggers.
-	for accountID, pgN := range serverConfig.Notify.GetPostgreSQL() {
+	for accountID, pgN := range setup.serverConfig.Notify.GetPostgreSQL() {
 		if !pgN.Enable {
 			continue
 		}
@@ -672,7 +669,7 @@ func loadAllQueueTargets() (map[string]*logrus.Logger, error) {
 	}
 
 	// Load Kafka targets, initialize their respective loggers.
-	for accountID, kafkaN := range serverConfig.Notify.GetKafka() {
+	for accountID, kafkaN := range setup.serverConfig.Notify.GetKafka() {
 		if !kafkaN.Enable {
 			continue
 		}
@@ -762,7 +759,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 		newTargetFunc func(string) (*logrus.Logger, error)) (string, error) {
 
 		// Construct the queue ARN for AMQP.
-		queueARN := minioSqs + serverConfig.GetRegion() + ":" + accountID + ":" + queueType
+		queueARN := minioSqs + setup.serverConfig.GetRegion() + ":" + accountID + ":" + queueType
 
 		// Queue target if already initialized we move to the next ARN.
 		if _, ok := queueTargets[queueARN]; ok {
@@ -780,7 +777,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 
 	queueTargets := make(map[string]*logrus.Logger)
 	// Load all amqp targets, initialize their respective loggers.
-	for accountID, amqpN := range serverConfig.Notify.GetAMQP() {
+	for accountID, amqpN := range setup.serverConfig.Notify.GetAMQP() {
 		if !amqpN.Enable {
 			continue
 		}
@@ -799,7 +796,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 	}
 
 	// Load all nats targets, initialize their respective loggers.
-	for accountID, natsN := range serverConfig.Notify.GetNATS() {
+	for accountID, natsN := range setup.serverConfig.Notify.GetNATS() {
 		if !natsN.Enable {
 			continue
 		}
@@ -818,7 +815,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 	}
 
 	// Load redis targets, initialize their respective loggers.
-	for accountID, redisN := range serverConfig.Notify.GetRedis() {
+	for accountID, redisN := range setup.serverConfig.Notify.GetRedis() {
 		if !redisN.Enable {
 			continue
 		}
@@ -837,7 +834,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 	}
 
 	// Load Webhook targets, initialize their respective loggers.
-	for accountID, webhookN := range serverConfig.Notify.GetWebhook() {
+	for accountID, webhookN := range setup.serverConfig.Notify.GetWebhook() {
 		if !webhookN.Enable {
 			continue
 		}
@@ -848,7 +845,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 	}
 
 	// Load elastic targets, initialize their respective loggers.
-	for accountID, elasticN := range serverConfig.Notify.GetElasticSearch() {
+	for accountID, elasticN := range setup.serverConfig.Notify.GetElasticSearch() {
 		if !elasticN.Enable {
 			continue
 		}
@@ -867,7 +864,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 	}
 
 	// Load PostgreSQL targets, initialize their respective loggers.
-	for accountID, pgN := range serverConfig.Notify.GetPostgreSQL() {
+	for accountID, pgN := range setup.serverConfig.Notify.GetPostgreSQL() {
 		if !pgN.Enable {
 			continue
 		}
@@ -886,7 +883,7 @@ func loadAllQueueTargets2(serverConfig *serverConfigV14New) (map[string]*logrus.
 	}
 
 	// Load Kafka targets, initialize their respective loggers.
-	for accountID, kafkaN := range serverConfig.Notify.GetKafka() {
+	for accountID, kafkaN := range setup.serverConfig.Notify.GetKafka() {
 		if !kafkaN.Enable {
 			continue
 		}

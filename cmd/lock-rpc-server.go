@@ -280,7 +280,7 @@ func (l *lockServer) lockMaintenance(interval time.Duration) {
 	nlripLongLived := getLongLivedLocks(l.lockMap, interval)
 	l.mutex.Unlock()
 
-	serverCred := serverConfig.GetCredential()
+	serverCred := setup.serverConfig.GetCredential()
 	// Validate if long lived locks are indeed clean.
 	for _, nlrip := range nlripLongLived {
 		// Initialize client based on the long live locks.
@@ -289,7 +289,7 @@ func (l *lockServer) lockMaintenance(interval time.Duration) {
 			secretKey:       serverCred.SecretKey,
 			serverAddr:      nlrip.lri.node,
 			serviceEndpoint: nlrip.lri.rpcPath,
-			secureConn:      globalIsSSL,
+			secureConn:      setup.secureConn,
 			serviceName:     "Dsync",
 		})
 

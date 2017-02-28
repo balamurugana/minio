@@ -25,7 +25,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -105,19 +104,19 @@ func parseStorageEndpoints(eps []string) (endpoints []*url.URL, err error) {
 		}
 		if u.Host != "" {
 			_, port, err := net.SplitHostPort(u.Host)
-			// Ignore the missing port error as the default port can be globalMinioPort.
+			// Ignore the missing port error as the default port can be setup.serverAddr.
 			if err != nil && !strings.Contains(err.Error(), "missing port in address") {
 				return nil, err
 			}
 
-			if globalMinioHost == "" {
+			if setup.serverAddr == "" {
 				// For ex.: minio server host1:port1 host2:port2...
 				// we return error as port is configurable only
 				// using "--address :port"
 				if port != "" {
 					return nil, fmt.Errorf("Invalid Argument %s, port configurable using --address :<port>", u.Host)
 				}
-				u.Host = net.JoinHostPort(u.Host, globalMinioPort)
+				u.Host = net.JoinHostPort(u.Host, setup.serverAddr)
 			} else {
 				// For ex.: minio server --address host:port host1:port1 host2:port2...
 				// i.e if "--address host:port" is specified
@@ -136,12 +135,6 @@ func parseStorageEndpoints(eps []string) (endpoints []*url.URL, err error) {
 func initServerConfig(c *cli.Context) {
 	// Initialization such as config generating/loading config, enable logging, ..
 	minioInit(c)
-
-	// Create certs path.
-	fatalIf(createCertsPath(), "Unable to create \"certs\" directory.")
-
-	// Load user supplied root CAs
-	loadRootCAs()
 
 	// Set maxOpenFiles, This is necessary since default operating
 	// system limits of 1024, 2048 are not enough for Minio server.
@@ -308,7 +301,7 @@ func checkServerSyntax(c *cli.Context) {
 	}
 
 	for _, ep := range endpoints {
-		if ep.Scheme == httpsScheme && !globalIsSSL {
+		if ep.Scheme == httpsScheme && !setup.secureConn {
 			// Certificates should be provided for https configuration.
 			fatalIf(errInvalidArgument, "Certificates not provided for secure configuration")
 		}
@@ -365,121 +358,6 @@ func getHostPort(address string) (host, port string, err error) {
 	return host, port, nil
 }
 
-// serverMain handler called for 'minio server' command.
-func serverMain(c *cli.Context) {
-	if !c.Args().Present() || c.Args().First() == "help" {
-		cli.ShowCommandHelpAndExit(c, "server", 1)
-	}
-
-	// Initializes server config, certs, logging and system settings.
-	initServerConfig(c)
-
-	// Check for new updates from dl.minio.io.
-	checkUpdate()
-
-	// Server address.
-	serverAddr := c.String("address")
-
-	var err error
-	globalMinioHost, globalMinioPort, err = getHostPort(serverAddr)
-	fatalIf(err, "Unable to extract host and port %s", serverAddr)
-
-	// Check server syntax and exit in case of errors.
-	// Done after globalMinioHost and globalMinioPort is set
-	// as parseStorageEndpoints() depends on it.
-	checkServerSyntax(c)
-
-	// Disks to be used in server init.
-	endpoints, err := parseStorageEndpoints(c.Args())
-	fatalIf(err, "Unable to parse storage endpoints %s", c.Args())
-
-	// Should exit gracefully if none of the endpoints passed
-	// as command line args are local to this server.
-	if !isAnyEndpointLocal(endpoints) {
-		fatalIf(errInvalidArgument, "None of the disks passed as command line args are local to this server.")
-	}
-
-	// Sort endpoints for consistent ordering across multiple
-	// nodes in a distributed setup. This is to avoid format.json
-	// corruption if the disks aren't supplied in the same order
-	// on all nodes.
-	sort.Sort(byHostPath(endpoints))
-
-	// Configure server.
-	srvConfig := serverCmdConfig{
-		serverAddr: serverAddr,
-		endpoints:  endpoints,
-	}
-
-	// Check if endpoints are part of distributed setup.
-	globalIsDistXL = isDistributedSetup(endpoints)
-
-	// Set nodes for dsync for distributed setup.
-	if globalIsDistXL {
-		fatalIf(initDsyncNodes(endpoints), "Unable to initialize distributed locking clients")
-	}
-
-	// Set globalIsXL if erasure code backend is about to be
-	// initialized for the given endpoints.
-	if len(endpoints) > 1 {
-		globalIsXL = true
-	}
-
-	// Initialize name space lock.
-	initNSLock(globalIsDistXL)
-
-	// Configure server.
-	handler, err := configureServerHandler(srvConfig)
-	fatalIf(err, "Unable to configure one of server's RPC services.")
-
-	// Initialize a new HTTP server.
-	apiServer := NewServerMux(serverAddr, handler)
-
-	// Set the global minio addr for this server.
-	globalMinioAddr = getLocalAddress(srvConfig)
-
-	// Initialize S3 Peers inter-node communication only in distributed setup.
-	initGlobalS3Peers(endpoints)
-
-	// Initialize Admin Peers inter-node communication only in distributed setup.
-	initGlobalAdminPeers(endpoints)
-
-	// Determine API endpoints where we are going to serve the S3 API from.
-	apiEndPoints, err := finalizeAPIEndpoints(apiServer.Addr)
-	fatalIf(err, "Unable to finalize API endpoints for %s", apiServer.Addr)
-
-	// Set the global API endpoints value.
-	globalAPIEndpoints = apiEndPoints
-
-	// Start server, automatically configures TLS if certs are available.
-	go func() {
-		cert, key := "", ""
-		if globalIsSSL {
-			cert, key = mustGetCertFile(), mustGetKeyFile()
-		}
-		fatalIf(apiServer.ListenAndServe(cert, key), "Failed to start minio server.")
-	}()
-
-	// Set endpoints of []*url.URL type to globalEndpoints.
-	globalEndpoints = endpoints
-
-	newObject, err := newObjectLayer(srvConfig)
-	fatalIf(err, "Initializing object layer failed")
-
-	globalObjLayerMutex.Lock()
-	globalObjectAPI = newObject
-	globalObjLayerMutex.Unlock()
-
-	// Prints the formatted startup message once object layer is initialized.
-	printStartupMessage(apiEndPoints)
-
-	// Set uptime time after object layer has initialized.
-	globalBootTime = time.Now().UTC()
-
-	// Waits on the server.
-	<-globalServiceDoneCh
-}
-
 // Initialize object layer with the supplied disks, objectLayer is nil upon any error.
 func newObjectLayer(srvCmdCfg serverCmdConfig) (newObject ObjectLayer, err error) {
 	// For FS only, directly use the disk.
@@ -507,7 +385,7 @@ func newObjectLayer(srvCmdCfg serverCmdConfig) (newObject ObjectLayer, err error
 	firstDisk := isLocalStorage(srvCmdCfg.endpoints[0])
 
 	// Initialize storage disks.
-	storageDisks, err := initStorageDisks(srvCmdCfg.endpoints)
+	storageDisks, err := initStorageDisks(setup)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +479,7 @@ func getServerConfig(configDir string, envCred credential) (serverConfig *server
 		}
 
 		if !cred.IsValid() {
-			cred = serverConfig.GetCredential()
+			cred = setup.serverConfig.GetCredential()
 			// Create freshly to generate secret hash key
 			cred = createCredential(cred.AccessKey, cred.SecretKey)
 		}
@@ -610,8 +488,12 @@ func getServerConfig(configDir string, envCred credential) (serverConfig *server
 			cred = newCredential()
 		}
 
-		serverConfig = newServerConfig(cred, "on")
-		if err = serverConfig.Save(configFile); err != nil {
+		browser := "on"
+		if setup.isBrowserDisabled {
+			browser = "off"
+		}
+		serverConfig = newServerConfig(cred, browser)
+		if err = setup.serverConfig.Save(configFile); err != nil {
 			err = fmt.Errorf("unable to initialize configuration file %s. %s", configFile, err)
 		}
 	}
@@ -683,6 +565,7 @@ func mainServer(ctx *cli.Context) {
 
 	if envAccessKey != "" && envSecretKey != "" {
 		setup.cred = createCredential(envAccessKey, envSecretKey)
+		setup.isEnvCred = true
 	}
 
 	quietPrintf("Checking SSL certificates\n")
@@ -818,7 +701,7 @@ func mainServer(ctx *cli.Context) {
 	// printStartupMessage(apiEndPoints)
 
 	// Set uptime time after object layer has initialized.
-	globalBootTime = time.Now().UTC()
+	setup.bootTime = time.Now().UTC()
 
 	// Waits on the server.
 	<-globalServiceDoneCh

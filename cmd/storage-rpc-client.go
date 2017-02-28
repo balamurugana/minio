@@ -105,7 +105,7 @@ func newStorageRPC(ep *url.URL) (StorageAPI, error) {
 	rpcPath := path.Join(minioReservedBucketPath, storageRPCPath, getPath(ep))
 	rpcAddr := ep.Host
 
-	serverCred := serverConfig.GetCredential()
+	serverCred := setup.serverConfig.GetCredential()
 	accessKey := serverCred.AccessKey
 	secretKey := serverCred.SecretKey
 	if ep.User != nil {
@@ -121,7 +121,7 @@ func newStorageRPC(ep *url.URL) (StorageAPI, error) {
 			secretKey:        secretKey,
 			serverAddr:       rpcAddr,
 			serviceEndpoint:  rpcPath,
-			secureConn:       globalIsSSL,
+			secureConn:       setup.secureConn,
 			serviceName:      "Storage",
 			disableReconnect: true,
 		}),
