@@ -21,11 +21,14 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/gorilla/mux"
 	"github.com/minio/cli"
+	miniohttp "github.com/minio/minio/pkg/http"
 )
 
 const azureGatewayTemplate = `NAME:
@@ -353,21 +356,16 @@ func gatewayMain(ctx *cli.Context, backendType gatewayBackend) {
 
 	}
 
-	apiServer := NewServerMux(serverAddr, registerHandlers(router, handlerFns...))
+	globalPublicCerts, globalRootCAs, globalTLSCertificate, globalIsSSL, err = getSSLConfig()
+	fatalIf(err, "Invalid SSL key/certificate file")
 
-	_, _, globalIsSSL, err = getSSLConfig()
-	fatalIf(err, "Invalid SSL key file")
-
-	// Start server, automatically configures TLS if certs are available.
+	globalHTTPServer = miniohttp.NewServer([]string{ctx.String("address")}, registerHandlers(router, handlerFns...), globalTLSCertificate)
 	go func() {
-		cert, key := "", ""
-		if globalIsSSL {
-			cert, key = getPublicCertFile(), getPrivateKeyFile()
-		}
-
-		aerr := apiServer.ListenAndServe(cert, key)
-		fatalIf(aerr, "Failed to start minio server")
+		serr := globalHTTPServer.Start()
+		globalHTTPServerErrorCh <- serr
 	}()
+
+	signal.Notify(globalOSSignalCh, os.Interrupt, syscall.SIGTERM)
 
 	// Once endpoints are finalized, initialize the new object api.
 	globalObjLayerMutex.Lock()
@@ -383,9 +381,9 @@ func gatewayMain(ctx *cli.Context, backendType gatewayBackend) {
 			mode = globalMinioModeGatewayS3
 		}
 		checkUpdate(mode)
-		apiEndpoints := getAPIEndpoints(apiServer.Addr)
+		apiEndpoints := getAPIEndpoints(ctx.String("address"))
 		printGatewayStartupMessage(apiEndpoints, accessKey, secretKey, backendType)
 	}
 
-	<-globalServiceDoneCh
+	handleSignals()
 }
