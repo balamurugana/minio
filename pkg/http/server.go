@@ -48,7 +48,7 @@ const (
 
 // Server - extended http.Server supports multiple addresses to serve and enhanced connection handling.
 type Server struct {
-	http.Server
+	*http.Server
 	Addrs                  []string                            // addresses on which the server listen for new connection.
 	ShutdownTimeout        time.Duration                       // timeout used for graceful server shutdown.
 	TCPKeepAliveTimeout    time.Duration                       // timeout used for underneath TCP connection.
@@ -167,18 +167,18 @@ func NewServer(addrs []string, handler http.Handler, certificate *tls.Certificat
 		tlsConfig.Certificates = append(tlsConfig.Certificates, *certificate)
 	}
 
-	httpServer := &Server{
+	return &Server{
+		Server: &http.Server{
+			Handler:        handler,
+			TLSConfig:      tlsConfig,
+			ReadTimeout:    DefaultReadTimeout,
+			WriteTimeout:   DefaultWriteTimeout,
+			MaxHeaderBytes: DefaultMaxHeaderBytes,
+		},
 		Addrs:               addrs,
 		ShutdownTimeout:     DefaultShutdownTimeout,
 		TCPKeepAliveTimeout: DefaultTCPKeepAliveTimeout,
 		listenerMutex:       &sync.Mutex{},
 		inShutdownMutex:     &sync.Mutex{},
 	}
-	httpServer.Handler = handler
-	httpServer.TLSConfig = tlsConfig
-	httpServer.ReadTimeout = DefaultReadTimeout
-	httpServer.WriteTimeout = DefaultWriteTimeout
-	httpServer.MaxHeaderBytes = DefaultMaxHeaderBytes
-
-	return httpServer
 }

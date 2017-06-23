@@ -28,43 +28,32 @@ import (
 )
 
 var sslRequiredErrMsg = []byte("HTTP/1.0 403 Forbidden\r\n\r\nSSL required")
+var httpRequiredErrMsg = []byte("HTTP/1.0 403 Forbidden\r\n\r\nPlain-Text required")
 
-// HTTP methods.
-var methods = []string{
+// The value chosen below is longest word chosen
+// from all the http verbs comprising of
+// "PRI", "OPTIONS", "GET", "HEAD", "POST",
+// "PUT", "DELETE", "TRACE", "CONNECT".
+const (
+	maxHTTPMethodLen = 7
+)
+
+// HTTP2 PRI method.
+var httpMethodPRI = "PRI"
+
+var defaultHTTP2Methods = []string{
+	httpMethodPRI,
+}
+
+var defaultHTTP1Methods = []string{
+	http.MethodOptions,
 	http.MethodGet,
 	http.MethodHead,
 	http.MethodPost,
 	http.MethodPut,
-	http.MethodPatch,
 	http.MethodDelete,
-	http.MethodConnect,
-	http.MethodOptions,
 	http.MethodTrace,
-	"PRI", // HTTP 2 method
-}
-
-// maximum length of above methods + one space.
-var methodMaxLen = getMethodMaxLen() + 1
-
-func getMethodMaxLen() int {
-	maxLen := 0
-	for _, method := range methods {
-		if len(method) > maxLen {
-			maxLen = len(method)
-		}
-	}
-
-	return maxLen
-}
-
-func isHTTPMethod(s string) bool {
-	for _, method := range methods {
-		if s == method {
-			return true
-		}
-	}
-
-	return false
+	http.MethodConnect,
 }
 
 type acceptResult struct {
@@ -107,6 +96,30 @@ func (listener *httpListener) start() {
 		}
 	}
 
+	// Guess TLS protocol returns true if HTTP1.1 or
+	// HTTP2 methods are not found in the input buffer.
+	//
+	// This function if it returns true doesn't mean
+	// buffer has indeed TLS data, which needs
+	// to be further validated by using tls handshake.
+	guessTLSProtocol := func(buf []byte) bool {
+		// Check for HTTP2 methods first.
+		for _, m := range defaultHTTP2Methods {
+			if strings.HasPrefix(string(buf), m) {
+				return false
+			}
+		}
+
+		// Check for HTTP1 methods.
+		for _, m := range defaultHTTP1Methods {
+			if strings.HasPrefix(string(buf), m) {
+				return false
+			}
+		}
+
+		return true
+	}
+
 	// Closure to accept single connection.
 	acceptTCP := func(tcpConn *net.TCPConn, doneCh <-chan struct{}) {
 		// Tune accepted TCP connection.
@@ -117,7 +130,7 @@ func (listener *httpListener) start() {
 			listener.updateBytesReadFunc, listener.updateBytesWrittenFunc)
 
 		// Peek bytes of maximum length of all HTTP methods.
-		data, err := bufconn.Peek(methodMaxLen)
+		data, err := bufconn.Peek(maxHTTPMethodLen)
 		if err != nil {
 			if listener.errorLogFunc != nil {
 				listener.errorLogFunc(err,
@@ -128,65 +141,51 @@ func (listener *httpListener) start() {
 			return
 		}
 
-		// Return bufconn if read data is a valid HTTP method.
-		tokens := strings.SplitN(string(data), " ", 2)
-		if isHTTPMethod(tokens[0]) {
-			if listener.tlsConfig == nil {
-				send(acceptResult{bufconn, nil}, doneCh)
-			} else {
+		if !guessTLSProtocol(data) {
+			// Return bufconn if read data is a valid HTTP method.
+			if listener.tlsConfig != nil {
 				// As TLS is configured and we got plain text HTTP request,
 				// return 403 (forbidden) error.
 				bufconn.Write(sslRequiredErrMsg)
 				bufconn.Close()
+				return
 			}
+			send(acceptResult{bufconn, nil}, doneCh)
 			return
 		}
 
-		if listener.tlsConfig != nil {
-			// As the listener is configured with TLS, try to do TLS handshake, drop the connection if it fails.
-			tlsConn := tls.Server(bufconn, listener.tlsConfig)
-			if err := tlsConn.Handshake(); err != nil {
-				if listener.errorLogFunc != nil {
-					listener.errorLogFunc(err,
-						"TLS handshake failed with new connection %s at server %s",
-						bufconn.RemoteAddr(), bufconn.LocalAddr())
-				}
-				bufconn.Close()
-				return
+		if listener.tlsConfig == nil {
+			// Client is TLS and server is not TLS configured.
+			// Can't send any error here, since client will not
+			// be able to interpret it on an attempted TLS conn.
+			if listener.errorLogFunc != nil {
+				listener.errorLogFunc(errors.New(""),
+					"Server %s not configured to support TLS request from %s",
+					bufconn.LocalAddr(), bufconn.RemoteAddr())
 			}
-
-			// Check whether the connection contains HTTP request or not.
-			bufconn = newBufConn(tlsConn, listener.readTimeout, listener.writeTimeout,
-				listener.updateBytesReadFunc, listener.updateBytesWrittenFunc)
-
-			// Peek bytes of maximum length of all HTTP methods.
-			data, err := bufconn.Peek(methodMaxLen)
-			if err != nil {
-				if listener.errorLogFunc != nil {
-					listener.errorLogFunc(err,
-						"Error in reading from new TLS connection %s at server %s",
-						bufconn.RemoteAddr(), bufconn.LocalAddr())
-				}
-				bufconn.Close()
-				return
-			}
-
-			// Return bufconn if read data is a valid HTTP method.
-			tokens := strings.SplitN(string(data), " ", 2)
-			if isHTTPMethod(tokens[0]) {
-				send(acceptResult{bufconn, nil}, doneCh)
-				return
-			}
+			bufconn.Close()
+			return
 		}
 
-		if listener.errorLogFunc != nil {
-			listener.errorLogFunc(errors.New("junk message"),
-				"Received non-HTTP message from new connection %s at server %s",
-				bufconn.RemoteAddr(), bufconn.LocalAddr())
+		// As the listener is configured with TLS, try to do TLS
+		// handshake, drop the connection if it fails.
+		tlsConn := tls.Server(bufconn, listener.tlsConfig)
+		if err = tlsConn.Handshake(); err != nil {
+			if listener.errorLogFunc != nil {
+				listener.errorLogFunc(err,
+					"TLS handshake failed with new connection %s at server %s",
+					bufconn.RemoteAddr(), bufconn.LocalAddr())
+			}
+			bufconn.Close()
+			return
 		}
 
-		bufconn.Close()
-		return
+		// Accept the new TLS connection.
+		send(acceptResult{newBufConn(tlsConn,
+			listener.readTimeout,
+			listener.writeTimeout,
+			listener.updateBytesReadFunc,
+			listener.updateBytesWrittenFunc), nil}, doneCh)
 	}
 
 	// Closure to handle new connections till done channel is not closed.
@@ -198,9 +197,9 @@ func (listener *httpListener) start() {
 				if !send(acceptResult{nil, err}, doneCh) {
 					return
 				}
-			} else {
-				go acceptTCP(tcpConn, doneCh)
+				continue
 			}
+			go acceptTCP(tcpConn, doneCh)
 		}
 	}
 
