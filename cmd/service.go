@@ -66,7 +66,7 @@ func restartProcess() error {
 }
 
 // Handles all serviceSignal and execute service functions.
-func (m *ServerMux) handleServiceSignals() error {
+func handleServiceSignals() error {
 	// Custom exit function
 	runExitFn := func(err error) {
 		// If global profiler is set stop before we exit.
@@ -94,7 +94,7 @@ func (m *ServerMux) handleServiceSignals() error {
 		case serviceStatus:
 			/// We don't do anything for this.
 		case serviceRestart:
-			if err := m.Close(); err != nil {
+			if err := globalHTTPServer.Close(); err != nil {
 				errorIf(err, "Unable to close server gracefully")
 			}
 			if err := restartProcess(); err != nil {
@@ -107,7 +107,7 @@ func (m *ServerMux) handleServiceSignals() error {
 				time.Sleep(serverShutdownPoll + time.Millisecond*100)
 				log.Println("Waiting for active connections to terminate - press Ctrl+C to quit immediately.")
 			}()
-			if err := m.Close(); err != nil {
+			if err := globalHTTPServer.Close(); err != nil {
 				errorIf(err, "Unable to close server gracefully")
 			}
 			objAPI := newObjectLayerFn()
