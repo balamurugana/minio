@@ -18,12 +18,13 @@ package cmd
 
 import (
 	"encoding/json"
+	"errors"
 	"io/ioutil"
-	"net"
 	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/garyburd/redigo/redis"
+	"github.com/minio/minio/pkg/host"
 )
 
 var (
@@ -35,11 +36,11 @@ var (
 
 // redisNotify to send logs to Redis server
 type redisNotify struct {
-	Enable   bool   `json:"enable"`
-	Format   string `json:"format"`
-	Addr     string `json:"address"`
-	Password string `json:"password"`
-	Key      string `json:"key"`
+	Enable   bool      `json:"enable"`
+	Format   string    `json:"format"`
+	Addr     host.Host `json:"address"`
+	Password string    `json:"password"`
+	Key      string    `json:"key"`
 }
 
 func (r *redisNotify) Validate() error {
@@ -49,8 +50,9 @@ func (r *redisNotify) Validate() error {
 	if r.Format != formatNamespace && r.Format != formatAccess {
 		return errRedisFormat
 	}
-	if _, _, err := net.SplitHostPort(r.Addr); err != nil {
-		return err
+
+	if r.Addr.IsEmpty() {
+		return errors.New("empty Addr")
 	}
 	if r.Key == "" {
 		return errRedisKeyError
@@ -71,7 +73,7 @@ func dialRedis(rNotify redisNotify) (*redis.Pool, error) {
 		return nil, errNotifyNotEnabled
 	}
 
-	addr := rNotify.Addr
+	addr := rNotify.Addr.String()
 	password := rNotify.Password
 	rPool := &redis.Pool{
 		MaxIdle:     3,

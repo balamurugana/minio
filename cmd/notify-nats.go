@@ -17,10 +17,11 @@
 package cmd
 
 import (
+	"errors"
 	"io/ioutil"
-	"net"
 
 	"github.com/Sirupsen/logrus"
+	"github.com/minio/minio/pkg/host"
 	"github.com/nats-io/go-nats-streaming"
 	"github.com/nats-io/nats"
 )
@@ -39,7 +40,7 @@ type natsNotifyStreaming struct {
 // All fields represent NATS configuration details.
 type natsNotify struct {
 	Enable       bool                `json:"enable"`
-	Address      string              `json:"address"`
+	Address      host.Host           `json:"address"`
 	Subject      string              `json:"subject"`
 	Username     string              `json:"username"`
 	Password     string              `json:"password"`
@@ -53,8 +54,9 @@ func (n *natsNotify) Validate() error {
 	if !n.Enable {
 		return nil
 	}
-	if _, _, err := net.SplitHostPort(n.Address); err != nil {
-		return err
+
+	if n.Address.IsEmpty() {
+		return errors.New("empty address")
 	}
 	return nil
 }
@@ -84,7 +86,7 @@ func dialNATS(natsL natsNotify, testDial bool) (nioc natsIOConn, e error) {
 			scheme = "tls"
 		}
 		// Construct address URL
-		addressURL := scheme + "://" + natsL.Username + ":" + natsL.Password + "@" + natsL.Address
+		addressURL := scheme + "://" + natsL.Username + ":" + natsL.Password + "@" + natsL.Address.String()
 		// Fetch the user-supplied client ID and provide a random one if not provided
 		clientID := natsL.Streaming.ClientID
 		if clientID == "" {
@@ -112,7 +114,7 @@ func dialNATS(natsL natsNotify, testDial bool) (nioc natsIOConn, e error) {
 	} else {
 		// Configure and connect to NATS server
 		natsC := nats.DefaultOptions
-		natsC.Url = "nats://" + natsL.Address
+		natsC.Url = "nats://" + natsL.Address.String()
 		natsC.User = natsL.Username
 		natsC.Password = natsL.Password
 		natsC.Token = natsL.Token

@@ -16,7 +16,11 @@
 
 package cmd
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/minio/minio/pkg/host"
+)
 
 /////////////////// Config V1 ///////////////////
 type configV1 struct {
@@ -166,11 +170,11 @@ type loggerV5 struct {
 		Index  string `json:"index"`
 	} `json:"elasticsearch"`
 	Redis struct {
-		Enable   bool   `json:"enable"`
-		Level    string `json:"level"`
-		Addr     string `json:"address"`
-		Password string `json:"password"`
-		Key      string `json:"key"`
+		Enable   bool      `json:"enable"`
+		Level    string    `json:"level"`
+		Addr     host.Host `json:"address"`
+		Password string    `json:"password"`
+		Key      string    `json:"key"`
 	} `json:"redis"`
 }
 
@@ -322,14 +326,14 @@ type serverConfigV10 struct {
 
 // natsNotifyV1 - structure was valid until config V 11
 type natsNotifyV1 struct {
-	Enable       bool   `json:"enable"`
-	Address      string `json:"address"`
-	Subject      string `json:"subject"`
-	Username     string `json:"username"`
-	Password     string `json:"password"`
-	Token        string `json:"token"`
-	Secure       bool   `json:"secure"`
-	PingInterval int64  `json:"pingInterval"`
+	Enable       bool      `json:"enable"`
+	Address      host.Host `json:"address"`
+	Subject      string    `json:"subject"`
+	Username     string    `json:"username"`
+	Password     string    `json:"password"`
+	Token        string    `json:"token"`
+	Secure       bool      `json:"secure"`
+	PingInterval int64     `json:"pingInterval"`
 }
 
 // serverConfigV11 server configuration version '11' which is like

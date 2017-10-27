@@ -149,13 +149,13 @@ func isValidQueueID(queueARN string) bool {
 		return mqttN.Enable && mqttN.Broker != ""
 	} else if isNATSQueue(sqsARN) {
 		natsN := serverConfig.Notify.GetNATSByID(sqsARN.AccountID)
-		return natsN.Enable && natsN.Address != ""
+		return natsN.Enable && !natsN.Address.IsEmpty()
 	} else if isElasticQueue(sqsARN) { // Elastic queue.
 		elasticN := serverConfig.Notify.GetElasticSearchByID(sqsARN.AccountID)
 		return elasticN.Enable && elasticN.URL != ""
 	} else if isRedisQueue(sqsARN) { // Redis queue.
 		redisN := serverConfig.Notify.GetRedisByID(sqsARN.AccountID)
-		return redisN.Enable && redisN.Addr != ""
+		return redisN.Enable && !redisN.Addr.IsEmpty()
 	} else if isPostgreSQLQueue(sqsARN) {
 		pgN := serverConfig.Notify.GetPostgreSQLByID(sqsARN.AccountID)
 		// Postgres can work with only default conn. info.
