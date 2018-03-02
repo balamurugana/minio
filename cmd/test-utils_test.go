@@ -1714,6 +1714,10 @@ func newTestObjectLayer(endpoints EndpointList) (newObject ObjectLayer, err erro
 // initObjectLayer - Instantiates object layer and returns it.
 func initObjectLayer(endpoints EndpointList) (ObjectLayer, []StorageAPI, error) {
 	objLayer, err := newTestObjectLayer(endpoints)
+	if globalNotificationSys, err = NewNotificationSys(globalServerConfig, endpoints); err != nil {
+		return nil, nil, err
+	}
+
 	if err != nil {
 		return nil, nil, err
 	}
