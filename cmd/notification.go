@@ -26,8 +26,10 @@ import (
 	"net/url"
 	"path"
 	"sync"
+	"time"
 
 	"github.com/minio/minio/cmd/logger"
+	"github.com/minio/minio/pkg/auth"
 	"github.com/minio/minio/pkg/event"
 	"github.com/minio/minio/pkg/hash"
 	xnet "github.com/minio/minio/pkg/net"
@@ -69,6 +71,33 @@ func (sys *NotificationSys) DeleteBucket(bucketName string) map[xnet.Host]error 
 			defer wg.Done()
 			if err := client.DeleteBucket(bucketName); err != nil {
 				errors[addr] = err
+			}
+		}(addr, client)
+	}
+	wg.Wait()
+
+	return errors
+}
+
+// SetCredentials - calls SetCredentials RPC call on all peers.
+func (sys *NotificationSys) SetCredentials(credentials auth.Credentials) map[xnet.Host]error {
+	errors := make(map[xnet.Host]error)
+	var wg sync.WaitGroup
+	for addr, client := range sys.peerRPCClientMap {
+		wg.Add(1)
+		go func(addr xnet.Host, client *PeerRPCClient) {
+			defer wg.Done()
+			// Try to set credentials in three attempts.
+			for i := 0; i < 3; i++ {
+				err := client.SetCredentials(credentials)
+				if err == nil {
+					break
+				}
+				errors[addr] = err
+				// Wait for one second and no need wait after last attempt.
+				if i < 2 {
+					time.Sleep(1 * time.Second)
+				}
 			}
 		}(addr, client)
 	}
