@@ -88,21 +88,7 @@ func (l *lockRPCReceiver) ForceUnlock(args *LockArgs, reply *bool) (err error) {
 
 // Expired - rpc handler for expired lock status.
 func (l *lockRPCReceiver) Expired(args *LockArgs, reply *bool) error {
-	l.ll.mutex.Lock()
-	defer l.ll.mutex.Unlock()
-	// Lock found, proceed to verify if belongs to given uid.
-	if lri, ok := l.ll.lockMap[args.LockArgs.Resource]; ok {
-		// Check whether uid is still active
-		for _, entry := range lri {
-			if entry.uid == args.LockArgs.UID {
-				*reply = false // When uid found, lock is still active so return not expired.
-				return nil     // When uid found *reply is set to true.
-			}
-		}
-	}
-	// When we get here lock is no longer active due to either args.LockArgs.Resource
-	// being absent from map or uid not found for given args.LockArgs.Resource
-	*reply = true
+	*reply = l.ll.Expired(args.LockArgs)
 	return nil
 }
 
@@ -115,38 +101,29 @@ func (l *lockRPCReceiver) Expired(args *LockArgs, reply *bool) error {
 //
 // We will ignore the error, and we will retry later to get a resolve on this lock
 func (l *lockRPCReceiver) lockMaintenance(interval time.Duration) {
-	l.ll.mutex.Lock()
-	// Get list of long lived locks to check for staleness.
-	nlripLongLived := getLongLivedLocks(l.ll.lockMap, interval)
-	l.ll.mutex.Unlock()
+	entries := l.ll.getLongLivedLocks(interval)
 
-	// Validate if long lived locks are indeed clean.
-	for _, nlrip := range nlripLongLived {
+	for _, entry := range entries {
 		// Initialize client based on the long live locks.
-		host, err := xnet.ParseHost(nlrip.lri.node)
+		host, err := xnet.ParseHost(entry.lockInfo.node)
 		logger.CriticalIf(context.Background(), err)
-		c, err := NewLockRPCClient(host)
+		rpcClient, err := NewLockRPCClient(host)
 		if err != nil {
 			logger.LogIf(context.Background(), err)
 			continue
 		}
 
 		// Call back to original server verify whether the lock is still active (based on name & uid)
-		expired, _ := c.Expired(dsync.LockArgs{
-			UID:      nlrip.lri.uid,
-			Resource: nlrip.name,
+		expired, _ := rpcClient.Expired(dsync.LockArgs{
+			UID:      entry.lockInfo.uid,
+			Resource: entry.name,
 		})
 
-		// Close the connection regardless of the call response.
-		c.Close()
+		rpcClient.Close()
 
-		// For successful response, verify if lock is indeed active or stale.
 		if expired {
-			// The lock is no longer active at server that originated the lock
-			// So remove the lock from the map.
-			l.ll.mutex.Lock()
-			l.ll.removeEntryIfExists(nlrip) // Purge the stale entry if it exists.
-			l.ll.mutex.Unlock()
+			// As lock is no longer active at server that originated this lock, remove it locally.
+			l.ll.removeByName(entry.name, entry.lockInfo)
 		}
 	}
 }

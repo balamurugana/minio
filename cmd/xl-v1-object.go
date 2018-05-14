@@ -33,29 +33,6 @@ import (
 // list all errors which can be ignored in object operations.
 var objectOpIgnoredErrs = append(baseIgnoredErrs, errDiskAccessDenied)
 
-// putObjectDir hints the bottom layer to create a new directory.
-func (xl xlObjects) putObjectDir(ctx context.Context, bucket, object string, writeQuorum int) error {
-	var wg = &sync.WaitGroup{}
-
-	errs := make([]error, len(xl.getDisks()))
-	// Prepare object creation in all disks
-	for index, disk := range xl.getDisks() {
-		if disk == nil {
-			continue
-		}
-		wg.Add(1)
-		go func(index int, disk StorageAPI) {
-			defer wg.Done()
-			if err := disk.MakeVol(pathJoin(bucket, object)); err != nil && err != errVolumeExists {
-				errs[index] = err
-			}
-		}(index, disk)
-	}
-	wg.Wait()
-
-	return reduceWriteQuorumErrs(ctx, errs, objectOpIgnoredErrs, writeQuorum)
-}
-
 // prepareFile hints the bottom layer to optimize the creation of a new object
 func (xl xlObjects) prepareFile(ctx context.Context, bucket, object string, size int64, onlineDisks []StorageAPI, blockSize int64, dataBlocks, writeQuorum int) error {
 	pErrs := make([]error, len(onlineDisks))
@@ -556,7 +533,7 @@ func (xl xlObjects) putObject(ctx context.Context, bucket string, object string,
 			return ObjectInfo{}, toObjectErr(errFileAccessDenied, bucket, object)
 		}
 
-		if err = xl.putObjectDir(ctx, minioMetaTmpBucket, tempObj, writeQuorum); err != nil {
+		if err = globalStorageClients.MakeVol(pathJoin(bucket, object)); err != nil {
 			return ObjectInfo{}, toObjectErr(err, bucket, object)
 		}
 

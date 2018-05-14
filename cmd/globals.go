@@ -136,7 +136,8 @@ var (
 	// File to log HTTP request/response headers and body.
 	globalHTTPTraceFile *os.File
 
-	globalAdminClients *AdminClients
+	globalAdminClients   *AdminClients
+	globalStorageClients *StorageClients
 
 	// Minio server user agent string.
 	globalServerUserAgent = "Minio/" + ReleaseTag + " (" + runtime.GOOS + "; " + runtime.GOARCH + ")"

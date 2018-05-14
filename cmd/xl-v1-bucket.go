@@ -41,42 +41,15 @@ func (xl xlObjects) MakeBucketWithLocation(ctx context.Context, bucket, location
 		return BucketNameInvalid{Bucket: bucket}
 	}
 
-	// Initialize sync waitgroup.
-	var wg = &sync.WaitGroup{}
-
-	// Initialize list of errors.
-	var dErrs = make([]error, len(xl.getDisks()))
-
-	// Make a volume entry on all underlying storage disks.
-	for index, disk := range xl.getDisks() {
-		if disk == nil {
-			logger.LogIf(ctx, errDiskNotFound)
-			dErrs[index] = errDiskNotFound
-			continue
+	err := globalStorageClients.MakeVol(bucket)
+	if err != nil {
+		logger.LogIf(ctx, err)
+		if err == errWriteQuorum {
+			// Ignore any error from DeleteVol.
+			_ = globalStorageClients.DeleteVol(bucket)
 		}
-		wg.Add(1)
-		// Make a volume inside a go-routine.
-		go func(index int, disk StorageAPI) {
-			defer wg.Done()
-			err := disk.MakeVol(bucket)
-			if err != nil {
-				if err != errVolumeExists {
-					logger.LogIf(ctx, err)
-				}
-				dErrs[index] = err
-			}
-		}(index, disk)
 	}
 
-	// Wait for all make vol to finish.
-	wg.Wait()
-
-	writeQuorum := len(xl.getDisks())/2 + 1
-	err := reduceWriteQuorumErrs(ctx, dErrs, bucketOpIgnoredErrs, writeQuorum)
-	if err == errXLWriteQuorum {
-		// Purge successfully created buckets if we don't have writeQuorum.
-		undoMakeBucket(xl.getDisks(), bucket)
-	}
 	return toObjectErr(err, bucket)
 }
 
@@ -93,27 +66,6 @@ func (xl xlObjects) undoDeleteBucket(bucket string) {
 		go func(index int, disk StorageAPI) {
 			defer wg.Done()
 			_ = disk.MakeVol(bucket)
-		}(index, disk)
-	}
-
-	// Wait for all make vol to finish.
-	wg.Wait()
-}
-
-// undo make bucket operation upon quorum failure.
-func undoMakeBucket(storageDisks []StorageAPI, bucket string) {
-	// Initialize sync waitgroup.
-	var wg = &sync.WaitGroup{}
-	// Undo previous make bucket entry on all underlying storage disks.
-	for index, disk := range storageDisks {
-		if disk == nil {
-			continue
-		}
-		wg.Add(1)
-		// Delete a bucket inside a go-routine.
-		go func(index int, disk StorageAPI) {
-			defer wg.Done()
-			_ = disk.DeleteVol(bucket)
 		}(index, disk)
 	}
 
