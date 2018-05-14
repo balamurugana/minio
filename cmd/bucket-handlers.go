@@ -655,8 +655,7 @@ func (api objectAPIHandlers) DeleteBucketHandler(w http.ResponseWriter, r *http.
 
 	globalNotificationSys.RemoveNotification(bucket)
 	globalPolicySys.Remove(bucket)
-	for addr, err := range globalNotificationSys.DeleteBucket(bucket) {
-		logger.GetReqInfo(ctx).AppendTags("remotePeer", addr.Name)
+	if err := globalNotificationSys.DeleteBucket(bucket); err != nil {
 		logger.LogIf(ctx, err)
 	}
 

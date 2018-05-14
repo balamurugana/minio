@@ -169,8 +169,7 @@ func (web *webAPIHandlers) DeleteBucket(r *http.Request, args *RemoveBucketArgs,
 
 	globalNotificationSys.RemoveNotification(args.BucketName)
 	globalPolicySys.Remove(args.BucketName)
-	for addr, err := range globalNotificationSys.DeleteBucket(args.BucketName) {
-		logger.GetReqInfo(ctx).AppendTags("remotePeer", addr.Name)
+	if err := globalNotificationSys.DeleteBucket(args.BucketName); err != nil {
 		logger.LogIf(ctx, err)
 	}
 
@@ -479,13 +478,9 @@ func (web *webAPIHandlers) SetAuth(r *http.Request, args *SetAuthArgs, reply *Se
 		return toJSONError(err)
 	}
 
-	if errs := globalNotificationSys.SetCredentials(creds); len(errs) != 0 {
-		reply.PeerErrMsgs = make(map[string]string)
-		for host, err := range errs {
-			err = fmt.Errorf("Unable to update credentials on server %v: %v", host, err)
-			logger.LogIf(context.Background(), err)
-			reply.PeerErrMsgs[host.String()] = err.Error()
-		}
+	// Update credentials in other peers.
+	if err := globalNotificationSys.SetCredentials(creds); err != nil {
+		reply.PeerErrMsgs[GetLocalPeer(globalEndpoints)] = err.Error()
 	} else {
 		reply.Token = newAuthToken()
 		reply.UIVersion = browser.UIVersion
@@ -918,11 +913,11 @@ func (web *webAPIHandlers) SetBucketPolicy(r *http.Request, args *SetBucketPolic
 		return toJSONError(err, args.BucketName)
 	}
 
-	globalPolicySys.Set(args.BucketName, *bucketPolicy)
-	for addr, err := range globalNotificationSys.SetBucketPolicy(args.BucketName, bucketPolicy) {
-		logger.GetReqInfo(ctx).AppendTags("remotePeer", addr.Name)
-		logger.LogIf(ctx, err)
+	if err := globalNotificationSys.SetBucketPolicy(args.BucketName, bucketPolicy); err != nil {
+		return toJSONError(err, args.BucketName)
 	}
+
+	globalPolicySys.Set(args.BucketName, *bucketPolicy)
 
 	return nil
 }

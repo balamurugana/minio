@@ -160,17 +160,3 @@ func NewPeerRPCClient(host *xnet.Host) (*PeerRPCClient, error) {
 
 	return &PeerRPCClient{rpcClient}, nil
 }
-
-// makeRemoteRPCClients - creates Peer RPCClients for given endpoint list.
-func makeRemoteRPCClients(endpoints EndpointList) map[xnet.Host]*PeerRPCClient {
-	peerRPCClientMap := make(map[xnet.Host]*PeerRPCClient)
-	for _, hostStr := range GetRemotePeers(endpoints) {
-		host, err := xnet.ParseHost(hostStr)
-		logger.CriticalIf(context.Background(), err)
-		rpcClient, err := NewPeerRPCClient(host)
-		logger.CriticalIf(context.Background(), err)
-		peerRPCClientMap[*host] = rpcClient
-	}
-
-	return peerRPCClientMap
-}

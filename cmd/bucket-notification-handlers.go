@@ -146,8 +146,7 @@ func (api objectAPIHandlers) PutBucketNotificationHandler(w http.ResponseWriter,
 
 	rulesMap := config.ToRulesMap()
 	globalNotificationSys.AddRulesMap(bucketName, rulesMap)
-	for addr, err := range globalNotificationSys.PutBucketNotification(bucketName, rulesMap) {
-		logger.GetReqInfo(ctx).AppendTags("remotePeer", addr.Name)
+	if err := globalNotificationSys.PutBucketNotification(bucketName, rulesMap); err != nil {
 		logger.LogIf(ctx, err)
 	}
 
@@ -251,9 +250,7 @@ func (api objectAPIHandlers) ListenBucketNotificationHandler(w http.ResponseWrit
 		return
 	}
 
-	errors := globalNotificationSys.ListenBucketNotification(bucketName, eventNames, pattern, target.ID(), *thisAddr)
-	for addr, err := range errors {
-		logger.GetReqInfo(ctx).AppendTags("remotePeer", addr.Name)
+	if err := globalNotificationSys.ListenBucketNotification(bucketName, eventNames, pattern, target.ID(), *thisAddr); err != nil {
 		logger.LogIf(ctx, err)
 	}
 

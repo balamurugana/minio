@@ -26,7 +26,6 @@ import (
 	"net/url"
 	"path"
 	"sync"
-	"time"
 
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/auth"
@@ -42,7 +41,7 @@ type NotificationSys struct {
 	targetList                 *event.TargetList
 	bucketRulesMap             map[string]event.RulesMap
 	bucketRemoteTargetRulesMap map[string]map[event.TargetID]event.RulesMap
-	peerRPCClientMap           map[xnet.Host]*PeerRPCClient
+	peerClients                *PeerClients
 }
 
 // GetARNList - returns available ARNs.
@@ -58,124 +57,37 @@ func (sys *NotificationSys) GetARNList() []string {
 
 // GetPeerRPCClient - returns PeerRPCClient of addr.
 func (sys *NotificationSys) GetPeerRPCClient(addr xnet.Host) *PeerRPCClient {
-	return sys.peerRPCClientMap[addr]
+	return sys.peerClients.GetPeerRPCClient(addr.String())
 }
 
 // DeleteBucket - calls DeleteBucket RPC call on all peers.
-func (sys *NotificationSys) DeleteBucket(bucketName string) map[xnet.Host]error {
-	errors := make(map[xnet.Host]error)
-	var wg sync.WaitGroup
-	for addr, client := range sys.peerRPCClientMap {
-		wg.Add(1)
-		go func(addr xnet.Host, client *PeerRPCClient) {
-			defer wg.Done()
-			if err := client.DeleteBucket(bucketName); err != nil {
-				errors[addr] = err
-			}
-		}(addr, client)
-	}
-	wg.Wait()
-
-	return errors
+func (sys *NotificationSys) DeleteBucket(bucketName string) error {
+	return sys.peerClients.DeleteBucket(bucketName)
 }
 
 // SetCredentials - calls SetCredentials RPC call on all peers.
-func (sys *NotificationSys) SetCredentials(credentials auth.Credentials) map[xnet.Host]error {
-	errors := make(map[xnet.Host]error)
-	var wg sync.WaitGroup
-	for addr, client := range sys.peerRPCClientMap {
-		wg.Add(1)
-		go func(addr xnet.Host, client *PeerRPCClient) {
-			defer wg.Done()
-			// Try to set credentials in three attempts.
-			for i := 0; i < 3; i++ {
-				err := client.SetCredentials(credentials)
-				if err == nil {
-					break
-				}
-				errors[addr] = err
-				// Wait for one second and no need wait after last attempt.
-				if i < 2 {
-					time.Sleep(1 * time.Second)
-				}
-			}
-		}(addr, client)
-	}
-	wg.Wait()
-
-	return errors
+func (sys *NotificationSys) SetCredentials(credentials auth.Credentials) error {
+	return sys.peerClients.SetCredentials(credentials)
 }
 
 // SetBucketPolicy - calls SetBucketPolicy RPC call on all peers.
-func (sys *NotificationSys) SetBucketPolicy(bucketName string, bucketPolicy *policy.Policy) map[xnet.Host]error {
-	errors := make(map[xnet.Host]error)
-	var wg sync.WaitGroup
-	for addr, client := range sys.peerRPCClientMap {
-		wg.Add(1)
-		go func(addr xnet.Host, client *PeerRPCClient) {
-			defer wg.Done()
-			if err := client.SetBucketPolicy(bucketName, bucketPolicy); err != nil {
-				errors[addr] = err
-			}
-		}(addr, client)
-	}
-	wg.Wait()
-
-	return errors
+func (sys *NotificationSys) SetBucketPolicy(bucketName string, bucketPolicy *policy.Policy) error {
+	return sys.peerClients.SetBucketPolicy(bucketName, bucketPolicy)
 }
 
 // RemoveBucketPolicy - calls RemoveBucketPolicy RPC call on all peers.
-func (sys *NotificationSys) RemoveBucketPolicy(bucketName string) map[xnet.Host]error {
-	errors := make(map[xnet.Host]error)
-	var wg sync.WaitGroup
-	for addr, client := range sys.peerRPCClientMap {
-		wg.Add(1)
-		go func(addr xnet.Host, client *PeerRPCClient) {
-			defer wg.Done()
-			if err := client.RemoveBucketPolicy(bucketName); err != nil {
-				errors[addr] = err
-			}
-		}(addr, client)
-	}
-	wg.Wait()
-
-	return errors
+func (sys *NotificationSys) RemoveBucketPolicy(bucketName string) error {
+	return sys.peerClients.RemoveBucketPolicy(bucketName)
 }
 
 // PutBucketNotification - calls PutBucketNotification RPC call on all peers.
-func (sys *NotificationSys) PutBucketNotification(bucketName string, rulesMap event.RulesMap) map[xnet.Host]error {
-	errors := make(map[xnet.Host]error)
-	var wg sync.WaitGroup
-	for addr, client := range sys.peerRPCClientMap {
-		wg.Add(1)
-		go func(addr xnet.Host, client *PeerRPCClient, rulesMap event.RulesMap) {
-			defer wg.Done()
-			if err := client.PutBucketNotification(bucketName, rulesMap); err != nil {
-				errors[addr] = err
-			}
-		}(addr, client, rulesMap.Clone())
-	}
-	wg.Wait()
-
-	return errors
+func (sys *NotificationSys) PutBucketNotification(bucketName string, rulesMap event.RulesMap) error {
+	return sys.peerClients.PutBucketNotification(bucketName, rulesMap)
 }
 
 // ListenBucketNotification - calls ListenBucketNotification RPC call on all peers.
-func (sys *NotificationSys) ListenBucketNotification(bucketName string, eventNames []event.Name, pattern string, targetID event.TargetID, localPeer xnet.Host) map[xnet.Host]error {
-	errors := make(map[xnet.Host]error)
-	var wg sync.WaitGroup
-	for addr, client := range sys.peerRPCClientMap {
-		wg.Add(1)
-		go func(addr xnet.Host, client *PeerRPCClient) {
-			defer wg.Done()
-			if err := client.ListenBucketNotification(bucketName, eventNames, pattern, targetID, localPeer); err != nil {
-				errors[addr] = err
-			}
-		}(addr, client)
-	}
-	wg.Wait()
-
-	return errors
+func (sys *NotificationSys) ListenBucketNotification(bucketName string, eventNames []event.Name, pattern string, targetID event.TargetID, localPeer xnet.Host) error {
+	return sys.peerClients.ListenBucketNotification(bucketName, eventNames, pattern, targetID, localPeer)
 }
 
 // AddRemoteTarget - adds event rules map, HTTP/PeerRPC client target to bucket name.
@@ -427,14 +339,12 @@ func NewNotificationSys(config *serverConfig, endpoints EndpointList) (*Notifica
 		return nil, err
 	}
 
-	peerRPCClientMap := makeRemoteRPCClients(endpoints)
-
 	// bucketRulesMap/bucketRemoteTargetRulesMap are initialized by NotificationSys.Init()
 	return &NotificationSys{
 		targetList:                 targetList,
 		bucketRulesMap:             make(map[string]event.RulesMap),
 		bucketRemoteTargetRulesMap: make(map[string]map[event.TargetID]event.RulesMap),
-		peerRPCClientMap:           peerRPCClientMap,
+		peerClients:                NewPeerClients(endpoints),
 	}, nil
 }
 
