@@ -262,13 +262,12 @@ func (fs *FSObjects) GetBucketInfo(ctx context.Context, bucket string) (bi Bucke
 
 // ListBuckets - list all s3 compatible buckets (directories) at fsPath.
 func (fs *FSObjects) ListBuckets(ctx context.Context) ([]BucketInfo, error) {
-	if err := checkPathLength(fs.fsPath); err != nil {
-		logger.LogIf(ctx, err)
-		return nil, err
-	}
 	var bucketInfos []BucketInfo
 	entries, err := readDir((fs.fsPath))
 	if err != nil {
+		if err == errFileNameTooLong {
+			return nil, err
+		}
 		logger.LogIf(ctx, errDiskNotFound)
 		return nil, toObjectErr(errDiskNotFound)
 	}

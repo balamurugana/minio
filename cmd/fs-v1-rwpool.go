@@ -81,10 +81,6 @@ func (fsi *fsIOPool) lookupToRead(path string) (*lock.RLockedFile, bool) {
 // only when there no more readers, the fd is purged if the lock
 // count has reached zero.
 func (fsi *fsIOPool) Open(path string) (*lock.RLockedFile, error) {
-	if err := checkPathLength(path); err != nil {
-		return nil, err
-	}
-
 	fsi.Lock()
 	rlkFile, ok := fsi.lookupToRead(path)
 	fsi.Unlock()
@@ -104,6 +100,11 @@ func (fsi *fsIOPool) Open(path string) (*lock.RLockedFile, error) {
 			} else if isSysErrPathNotFound(err) {
 				return nil, errFileNotFound
 			}
+
+			if isSysErrTooLong(err) {
+				return nil, errFileNameTooLong
+			}
+
 			return nil, err
 		}
 
@@ -142,10 +143,6 @@ func (fsi *fsIOPool) Open(path string) (*lock.RLockedFile, error) {
 //   or read is in progress. Concurrent calls are protected
 //   by the global namspace lock within the same process.
 func (fsi *fsIOPool) Write(path string) (wlk *lock.LockedFile, err error) {
-	if err = checkPathLength(path); err != nil {
-		return nil, err
-	}
-
 	wlk, err = lock.LockedOpenFile(path, os.O_RDWR, 0666)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -155,6 +152,11 @@ func (fsi *fsIOPool) Write(path string) (wlk *lock.LockedFile, err error) {
 		} else if isSysErrIsDir(err) {
 			return nil, errIsNotRegular
 		}
+
+		if isSysErrTooLong(err) {
+			return nil, errFileNameTooLong
+		}
+
 		return nil, err
 	}
 	return wlk, nil
@@ -163,10 +165,6 @@ func (fsi *fsIOPool) Write(path string) (wlk *lock.LockedFile, err error) {
 // Create - creates a new write locked file instance.
 // - if the file doesn't exist. We create the file and hold lock.
 func (fsi *fsIOPool) Create(path string) (wlk *lock.LockedFile, err error) {
-	if err = checkPathLength(path); err != nil {
-		return nil, err
-	}
-
 	// Creates parent if missing.
 	if err = mkdirAll(pathutil.Dir(path), 0777); err != nil {
 		return nil, err
@@ -182,6 +180,11 @@ func (fsi *fsIOPool) Create(path string) (wlk *lock.LockedFile, err error) {
 		} else if isSysErrPathNotFound(err) {
 			return nil, errFileAccessDenied
 		}
+
+		if isSysErrTooLong(err) {
+			return nil, errFileNameTooLong
+		}
+
 		return nil, err
 	}
 
@@ -195,10 +198,6 @@ func (fsi *fsIOPool) Create(path string) (wlk *lock.LockedFile, err error) {
 func (fsi *fsIOPool) Close(path string) error {
 	fsi.Lock()
 	defer fsi.Unlock()
-
-	if err := checkPathLength(path); err != nil {
-		return err
-	}
 
 	// Pop readers from path.
 	rlkFile, ok := fsi.readersMap[path]

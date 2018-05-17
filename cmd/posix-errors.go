@@ -66,6 +66,10 @@ func isSysErrNotDir(err error) bool {
 
 // Check if the given error corresponds to the ENAMETOOLONG (name too long).
 func isSysErrTooLong(err error) bool {
+	if err == nil {
+		return false
+	}
+
 	if pathErr, ok := err.(*os.PathError); ok {
 		switch pathErr.Err {
 		case syscall.ENAMETOOLONG:

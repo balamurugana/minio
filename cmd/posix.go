@@ -49,29 +49,6 @@ type posix struct {
 	connected  bool
 }
 
-// checkPathLength - returns error if given path name length more than 255
-func checkPathLength(pathName string) error {
-	// Apple OS X path length is limited to 1016
-	if runtime.GOOS == "darwin" && len(pathName) > 1016 {
-		return errFileNameTooLong
-	}
-
-	// Convert any '\' to '/'.
-	pathName = filepath.ToSlash(pathName)
-
-	// Check each path segment length is > 255
-	for len(pathName) > 0 && pathName != "." && pathName != "/" {
-		dir, file := slashpath.Dir(pathName), slashpath.Base(pathName)
-
-		if len(file) > 255 {
-			return errFileNameTooLong
-		}
-
-		pathName = dir
-	} // Success.
-	return nil
-}
-
 func getValidPath(path string) (string, error) {
 	if path == "" {
 		return path, errInvalidArgument
@@ -148,6 +125,9 @@ func newPosix(path string) (StorageAPI, error) {
 		return nil, err
 	}
 
+	// Keep `/` path separator in windows too.
+	path = filepath.ToSlash(path)
+
 	st := &posix{
 		diskPath: path,
 		// 1MiB buffer pool for posix internal operations.
@@ -166,12 +146,14 @@ func newPosix(path string) (StorageAPI, error) {
 
 // getDiskInfo returns given disk information.
 func getDiskInfo(diskPath string) (di disk.Info, err error) {
-	if err = checkPathLength(diskPath); err == nil {
-		di, err = disk.GetInfo(diskPath)
-	}
+	di, err = disk.GetInfo(diskPath)
 
 	if os.IsNotExist(err) {
 		err = errDiskNotFound
+	}
+
+	if isSysErrTooLong(err) {
+		err = errFileNameTooLong
 	}
 
 	return di, err
@@ -358,9 +340,6 @@ func (s *posix) ListVols() (volsInfo []VolInfo, err error) {
 
 // List all the volumes from diskPath.
 func listVols(dirPath string) ([]VolInfo, error) {
-	if err := checkPathLength(dirPath); err != nil {
-		return nil, err
-	}
 	entries, err := readDir(dirPath)
 	if err != nil {
 		return nil, errDiskNotFound
@@ -539,13 +518,12 @@ func (s *posix) ReadAll(volume, path string) (buf []byte, err error) {
 
 	// Validate file path length, before reading.
 	filePath := pathJoin(volumeDir, path)
-	if err = checkPathLength((filePath)); err != nil {
-		return nil, err
-	}
-
 	// Open the file for reading.
 	buf, err = ioutil.ReadFile((filePath))
 	if err != nil {
+		if isSysErrTooLong(err) {
+			return nil, errFileNameTooLong
+		}
 		if os.IsNotExist(err) {
 			return nil, errFileNotFound
 		} else if os.IsPermission(err) {
@@ -610,13 +588,12 @@ func (s *posix) ReadFile(volume, path string, offset int64, buffer []byte, verif
 
 	// Validate effective path length before reading.
 	filePath := pathJoin(volumeDir, path)
-	if err = checkPathLength((filePath)); err != nil {
-		return 0, err
-	}
-
 	// Open the file for reading.
 	file, err := os.Open((filePath))
 	if err != nil {
+		if isSysErrTooLong(err) {
+			return 0, errFileNameTooLong
+		}
 		if os.IsNotExist(err) {
 			return 0, errFileNotFound
 		} else if os.IsPermission(err) {
@@ -701,10 +678,6 @@ func (s *posix) createFile(volume, path string) (f *os.File, err error) {
 	}
 
 	filePath := pathJoin(volumeDir, path)
-	if err = checkPathLength((filePath)); err != nil {
-		return nil, err
-	}
-
 	// Verify if the file already exists and is not of regular type.
 	var st os.FileInfo
 	if st, err = os.Stat(filePath); err == nil {
@@ -712,6 +685,10 @@ func (s *posix) createFile(volume, path string) (f *os.File, err error) {
 			return nil, errIsNotRegular
 		}
 	} else {
+		if isSysErrTooLong(err) {
+			return nil, errFileNameTooLong
+		}
+
 		// Create top level directories if they don't exist.
 		// with mode 0777 mkdir honors system umask.
 		if err = mkdirAll(slashpath.Dir(filePath), 0777); err != nil {
@@ -838,9 +815,6 @@ func (s *posix) StatFile(volume, path string) (file FileInfo, err error) {
 	}
 
 	filePath := slashpath.Join(volumeDir, path)
-	if err = checkPathLength((filePath)); err != nil {
-		return FileInfo{}, err
-	}
 	st, err := os.Stat((filePath))
 	if err != nil {
 		// File is really not found.
@@ -851,6 +825,10 @@ func (s *posix) StatFile(volume, path string) (file FileInfo, err error) {
 		// File path cannot be verified since one of the parents is a file.
 		if isSysErrNotDir(err) {
 			return FileInfo{}, errFileNotFound
+		}
+
+		if isSysErrTooLong(err) {
+			return FileInfo{}, errFileNameTooLong
 		}
 
 		// Return all errors here.
@@ -884,6 +862,10 @@ func deleteFile(basePath, deletePath string) error {
 		// error on parent directories.
 		if isSysErrNotEmpty(err) {
 			return nil
+		}
+
+		if isSysErrTooLong(err) {
+			return errFileNameTooLong
 		}
 
 		if os.IsNotExist(err) {
@@ -937,10 +919,6 @@ func (s *posix) DeleteFile(volume, path string) (err error) {
 	// Following code is needed so that we retain "/" suffix if any in
 	// path argument.
 	filePath := pathJoin(volumeDir, path)
-	if err = checkPathLength((filePath)); err != nil {
-		return err
-	}
-
 	// Delete file and delete parent directory as well if its empty.
 	return deleteFile(volumeDir, filePath)
 }
@@ -991,13 +969,7 @@ func (s *posix) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) (err e
 		return errFileAccessDenied
 	}
 	srcFilePath := slashpath.Join(srcVolumeDir, srcPath)
-	if err = checkPathLength(srcFilePath); err != nil {
-		return err
-	}
 	dstFilePath := slashpath.Join(dstVolumeDir, dstPath)
-	if err = checkPathLength(dstFilePath); err != nil {
-		return err
-	}
 	if srcIsDir {
 		// If source is a directory, we expect the destination to be non-existent but we
 		// we still need to allow overwriting an empty directory since it represents
@@ -1009,6 +981,9 @@ func (s *posix) RenameFile(srcVolume, srcPath, dstVolume, dstPath string) (err e
 		}
 		if !os.IsNotExist(err) {
 			return err
+		}
+		if isSysErrTooLong(err) {
+			return errFileNameTooLong
 		}
 	}
 

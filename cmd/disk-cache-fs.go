@@ -520,13 +520,10 @@ func fsRenameDir(dirPath, newPath string) (err error) {
 		return errInvalidArgument
 	}
 
-	if err = checkPathLength(dirPath); err != nil {
-		return err
-	}
-	if err = checkPathLength(newPath); err != nil {
-		return err
-	}
 	if err = os.Rename(dirPath, newPath); err != nil {
+		if isSysErrTooLong(err) {
+			return errFileNameTooLong
+		}
 		if os.IsNotExist(err) {
 			return errVolumeNotFound
 		} else if isSysErrNotEmpty(err) {

@@ -46,6 +46,11 @@ func readDirN(dirPath string, count int) (entries []string, err error) {
 		if strings.Contains(err.Error(), "not a directory") {
 			return nil, errFileNotFound
 		}
+
+		if isSysErrTooLong(err) {
+			err = errFileNameTooLong
+		}
+
 		return nil, err
 	}
 	defer d.Close()

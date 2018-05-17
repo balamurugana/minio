@@ -36,12 +36,11 @@ func fsRemoveFile(ctx context.Context, filePath string) (err error) {
 		return errInvalidArgument
 	}
 
-	if err = checkPathLength(filePath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-
 	if err = os.Remove((filePath)); err != nil {
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return errFileNameTooLong
+		}
 		err = osErrToFSFileErr(err)
 		if err != errFileNotFound {
 			logger.LogIf(ctx, err)
@@ -59,11 +58,6 @@ func fsRemoveAll(ctx context.Context, dirPath string) (err error) {
 		return errInvalidArgument
 	}
 
-	if err = checkPathLength(dirPath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-
 	if err = os.RemoveAll(dirPath); err != nil {
 		if os.IsPermission(err) {
 			logger.LogIf(ctx, errVolumeAccessDenied)
@@ -72,6 +66,12 @@ func fsRemoveAll(ctx context.Context, dirPath string) (err error) {
 			logger.LogIf(ctx, errVolumeNotEmpty)
 			return errVolumeNotEmpty
 		}
+
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return errFileNameTooLong
+		}
+
 		logger.LogIf(ctx, err)
 		return err
 	}
@@ -87,17 +87,18 @@ func fsRemoveDir(ctx context.Context, dirPath string) (err error) {
 		return errInvalidArgument
 	}
 
-	if err = checkPathLength(dirPath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-
 	if err = os.Remove((dirPath)); err != nil {
 		if os.IsNotExist(err) {
 			return errVolumeNotFound
 		} else if isSysErrNotEmpty(err) {
 			return errVolumeNotEmpty
 		}
+
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return errFileNameTooLong
+		}
+
 		logger.LogIf(ctx, err)
 		return err
 	}
@@ -113,11 +114,6 @@ func fsMkdir(ctx context.Context, dirPath string) (err error) {
 	if dirPath == "" {
 		logger.LogIf(ctx, errInvalidArgument)
 		return errInvalidArgument
-	}
-
-	if err = checkPathLength(dirPath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
 	}
 
 	if err = os.Mkdir((dirPath), 0777); err != nil {
@@ -136,6 +132,12 @@ func fsMkdir(ctx context.Context, dirPath string) (err error) {
 			logger.LogIf(ctx, errDiskAccessDenied)
 			return errDiskAccessDenied
 		}
+
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return errFileNameTooLong
+		}
+
 		logger.LogIf(ctx, err)
 		return err
 	}
@@ -153,12 +155,13 @@ func fsStat(ctx context.Context, statLoc string) (os.FileInfo, error) {
 		logger.LogIf(ctx, errInvalidArgument)
 		return nil, errInvalidArgument
 	}
-	if err := checkPathLength(statLoc); err != nil {
-		logger.LogIf(ctx, err)
-		return nil, err
-	}
 	fi, err := os.Stat(statLoc)
 	if err != nil {
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return nil, errFileNameTooLong
+		}
+
 		return nil, err
 	}
 
@@ -267,13 +270,14 @@ func fsOpenFile(ctx context.Context, readPath string, offset int64) (io.ReadClos
 		logger.LogIf(ctx, errInvalidArgument)
 		return nil, 0, errInvalidArgument
 	}
-	if err := checkPathLength(readPath); err != nil {
-		logger.LogIf(ctx, err)
-		return nil, 0, err
-	}
 
 	fr, err := os.Open(readPath)
 	if err != nil {
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return nil, 0, errFileNameTooLong
+		}
+
 		return nil, 0, osErrToFSFileErr(err)
 	}
 
@@ -313,12 +317,12 @@ func fsCreateFile(ctx context.Context, filePath string, reader io.Reader, buf []
 		return 0, errInvalidArgument
 	}
 
-	if err := checkPathLength(filePath); err != nil {
-		logger.LogIf(ctx, err)
-		return 0, err
-	}
-
 	if err := mkdirAll(pathutil.Dir(filePath), 0777); err != nil {
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return 0, errFileNameTooLong
+		}
+
 		logger.LogIf(ctx, err)
 		return 0, err
 	}
@@ -330,6 +334,11 @@ func fsCreateFile(ctx context.Context, filePath string, reader io.Reader, buf []
 
 	writer, err := lock.Open(filePath, os.O_CREATE|os.O_WRONLY, 0666)
 	if err != nil {
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return 0, errFileNameTooLong
+		}
+
 		return 0, osErrToFSFileErr(err)
 	}
 	defer writer.Close()
@@ -385,17 +394,13 @@ func fsFAllocate(fd int, offset int64, len int64) (err error) {
 // Renames source path to destination path, creates all the
 // missing parents if they don't exist.
 func fsRenameFile(ctx context.Context, sourcePath, destPath string) error {
-	if err := checkPathLength(sourcePath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-	if err := checkPathLength(destPath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-
 	// Verify if source path exists.
 	if _, err := os.Stat(sourcePath); err != nil {
+		if isSysErrTooLong(err) {
+			logger.LogIf(ctx, err)
+			return errFileNameTooLong
+		}
+
 		return osErrToFSFileErr(err)
 	}
 
@@ -409,16 +414,6 @@ func fsRenameFile(ctx context.Context, sourcePath, destPath string) error {
 
 // fsDeleteFile is a wrapper for deleteFile(), after checking the path length.
 func fsDeleteFile(ctx context.Context, basePath, deletePath string) error {
-	if err := checkPathLength(basePath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-
-	if err := checkPathLength(deletePath); err != nil {
-		logger.LogIf(ctx, err)
-		return err
-	}
-
 	if err := deleteFile(basePath, deletePath); err != nil {
 		if err != errFileNotFound {
 			logger.LogIf(ctx, err)

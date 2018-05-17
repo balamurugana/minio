@@ -131,6 +131,9 @@ func readDirN(dirPath string, count int) (entries []string, err error) {
 		if os.IsPermission(err) {
 			return nil, errFileAccessDenied
 		}
+		if isSysErrTooLong(err) {
+			err = errFileNameTooLong
+		}
 
 		// File path cannot be verified since one of the parents is a file.
 		if strings.Contains(err.Error(), "not a directory") {

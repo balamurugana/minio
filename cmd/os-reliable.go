@@ -30,10 +30,6 @@ func mkdirAll(dirPath string, mode os.FileMode) (err error) {
 		return errInvalidArgument
 	}
 
-	if err = checkPathLength(dirPath); err != nil {
-		return err
-	}
-
 	if err = reliableMkdirAll(dirPath, mode); err != nil {
 		// File path cannot be verified since one of the parents is a file.
 		if isSysErrNotDir(err) {
@@ -55,6 +51,10 @@ func reliableMkdirAll(dirPath string, mode os.FileMode) (err error) {
 	for {
 		// Creates all the parent directories, with mode 0777 mkdir honors system umask.
 		if err = os.MkdirAll(dirPath, mode); err != nil {
+			if isSysErrTooLong(err) {
+				return errFileNameTooLong
+			}
+
 			// Retry only for the first retryable error.
 			if os.IsNotExist(err) && i == 0 {
 				i++
@@ -73,13 +73,6 @@ func reliableMkdirAll(dirPath string, mode os.FileMode) (err error) {
 func renameAll(srcFilePath, dstFilePath string) (err error) {
 	if srcFilePath == "" || dstFilePath == "" {
 		return errInvalidArgument
-	}
-
-	if err = checkPathLength(srcFilePath); err != nil {
-		return err
-	}
-	if err = checkPathLength(dstFilePath); err != nil {
-		return err
 	}
 
 	if err = reliableRename(srcFilePath, dstFilePath); err != nil {
@@ -109,6 +102,10 @@ func reliableRename(srcFilePath, dstFilePath string) (err error) {
 		}
 		// After a successful parent directory create attempt a renameAll.
 		if err = os.Rename(srcFilePath, dstFilePath); err != nil {
+			if isSysErrTooLong(err) {
+				return errFileNameTooLong
+			}
+
 			// Retry only for the first retryable error.
 			if os.IsNotExist(err) && i == 0 {
 				i++
