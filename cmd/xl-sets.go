@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/minio/minio/cmd/format"
 	"github.com/minio/minio/cmd/logger"
 	"github.com/minio/minio/pkg/bpool"
 	"github.com/minio/minio/pkg/hash"
@@ -56,7 +57,7 @@ type xlSets struct {
 	sets []*xlObjects
 
 	// Reference format.
-	format *formatXLV3
+	format *format.XLV3
 
 	// xlDisks mutex to lock xlDisks.
 	xlDisksMu sync.RWMutex
@@ -107,7 +108,7 @@ func (s *xlSets) isConnected(endpoint Endpoint) bool {
 
 // Initializes a new StorageAPI from the endpoint argument, returns
 // StorageAPI and also `format` which exists on the disk.
-func connectEndpoint(endpoint Endpoint) (StorageAPI, *formatXLV3, error) {
+func connectEndpoint(endpoint Endpoint) (StorageAPI, *format.XLV3, error) {
 	disk, err := newStorageAPI(endpoint)
 	if err != nil {
 		return nil, nil, err
@@ -125,8 +126,8 @@ func connectEndpoint(endpoint Endpoint) (StorageAPI, *formatXLV3, error) {
 
 // findDiskIndex - returns the i,j'th position of the input `format` against the reference
 // format, after successful validation.
-func findDiskIndex(refFormat, format *formatXLV3) (int, int, error) {
-	if err := formatXLV3Check(refFormat, format); err != nil {
+func findDiskIndex(refFormat, format *format.XLV3) (int, int, error) {
+	if err := format.XLV3Check(refFormat, format); err != nil {
 		return 0, 0, err
 	}
 
@@ -147,7 +148,7 @@ func findDiskIndex(refFormat, format *formatXLV3) (int, int, error) {
 
 // Re initializes all disks based on the reference format, this function is
 // only used by HealFormat and ReloadFormat calls.
-func (s *xlSets) reInitDisks(refFormat *formatXLV3, storageDisks []StorageAPI, formats []*formatXLV3) [][]StorageAPI {
+func (s *xlSets) reInitDisks(refFormat *format.XLV3, storageDisks []StorageAPI, formats []*format.XLV3) [][]StorageAPI {
 	xlDisks := make([][]StorageAPI, s.setCount)
 	for i := 0; i < len(refFormat.XL.Sets); i++ {
 		xlDisks[i] = make([]StorageAPI, s.drivesPerSet)
@@ -227,7 +228,7 @@ func (s *xlSets) GetDisks(setIndex int) func() []StorageAPI {
 const defaultMonitorConnectEndpointInterval = time.Second * 10 // Set to 10 secs.
 
 // Initialize new set of erasure coded sets.
-func newXLSets(endpoints EndpointList, format *formatXLV3, setCount int, drivesPerSet int) (ObjectLayer, error) {
+func newXLSets(endpoints EndpointList, format *format.XLV3, setCount int, drivesPerSet int) (ObjectLayer, error) {
 
 	// Initialize the XL sets instance.
 	s := &xlSets{
@@ -900,7 +901,7 @@ else
 fi
 */
 
-func formatsToDrivesInfo(endpoints EndpointList, formats []*formatXLV3, sErrs []error) (beforeDrives []madmin.DriveInfo) {
+func formatsToDrivesInfo(endpoints EndpointList, formats []*format.XLV3, sErrs []error) (beforeDrives []madmin.DriveInfo) {
 	// Existing formats are available (i.e. ok), so save it in
 	// result, also populate disks to be healed.
 	for i, format := range formats {
@@ -1115,7 +1116,7 @@ func (s *xlSets) HealFormat(ctx context.Context, dryRun bool) (res madmin.HealRe
 	}
 
 	if !dryRun {
-		var tmpNewFormats = make([]*formatXLV3, s.setCount*s.drivesPerSet)
+		var tmpNewFormats = make([]*format.XLV3, s.setCount*s.drivesPerSet)
 		for i := range newFormatSets {
 			for j := range newFormatSets[i] {
 				if newFormatSets[i][j] == nil {
