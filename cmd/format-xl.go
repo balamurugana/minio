@@ -76,7 +76,7 @@ func closeStorageDisks(storageDisks []StorageAPI) {
 	}
 }
 
-func readFormatXL(disk StorageAPI) (*format.XLV3, error) {
+func _readFormatXL(disk StorageAPI) (*format.XLV3, error) {
 	data, err := disk.ReadAll(minioMetaBucket, formatConfigFile)
 	if err != nil {
 		if err != errFileNotFound && err != errVolumeNotFound {
@@ -112,7 +112,7 @@ func readFormatXL(disk StorageAPI) (*format.XLV3, error) {
 	return &f, nil
 }
 
-func readFormatXLs(storageDisks []StorageAPI, f *format.XLV3, emptyCheck bool) (formats, indexFixFormats []*format.XLV3, healRequired bool) {
+func _readFormatXLs(storageDisks []StorageAPI, f *format.XLV3, emptyCheck bool) (formats, indexFixFormats []*format.XLV3, healRequired bool) {
 	disks := storageDisks
 
 	formats = make([]*format.XLV3, len(disks))
@@ -345,7 +345,7 @@ func waitToFormat(isFirstEndpoint bool) {
 //    When empty format.json in other (not first) endpoint:
 //     - Wait for first endpoint or admin to heal.
 // 2. finally; read format.json from all endpoints until read quorum success is achieved.
-func initFormatXL(setCount, setSize int) error {
+func _initFormatXL(setCount, setSize int) error {
 	var thisEndpoint *Endpoint
 	for _, endpoint := range globalEndpoints {
 		if endpoint.IsLocal {
