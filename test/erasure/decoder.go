@@ -62,7 +62,7 @@ func (d *Decoder) CopyN(writer io.Writer, readers []io.Reader, length int64) (in
 		}
 
 		if errCount > d.parityCount+1 {
-			return false, errors.New("too many read errors")
+			return false, fmt.Errorf("too many read errors. %v", errs)
 		}
 
 		return reconstruct, nil

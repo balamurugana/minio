@@ -55,6 +55,7 @@ func (client *Client) Call(serviceMethod string, args interface{}, reader io.Rea
 	}
 
 	response, err := client.httpClient.Post(client.serviceURL, "", body)
+	response.Body = NewDrainReader(response.Body)
 	if err != nil {
 		return nil, err
 	}

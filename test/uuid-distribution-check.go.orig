@@ -1,0 +1,49 @@
+package main
+
+import (
+	"fmt"
+
+	"github.com/balamurugana/minio/test/uuid"
+)
+
+func main() {
+	m := map[string]struct{}{}
+	m2 := map[string]struct{}{}
+
+	for i := 0; i < 1000; i++ {
+		hit := 0
+		hit2 := 0
+
+		created := 0
+		created2 := 0
+		for j := 0; j < 1000; j++ {
+			u := uuid.NewString()
+			id := u[:4]
+			id2 := u[:4][:4]
+			if _, ok := m[id]; ok {
+				hit++
+				if _, ok := m2[id2]; ok {
+					hit2++
+				} else {
+					m2[id2] = struct{}{}
+					created2++
+				}
+			} else {
+				m[id] = struct{}{}
+				m2[id2] = struct{}{}
+				created++
+			}
+		}
+
+		m2len := 0
+		for range m2 {
+			m2len++
+		}
+
+		if created > 0 {
+			fmt.Printf("L1: run: %-4v created: %-7v hits: %-4v: m2len = %v\n", i, created, hit, m2len)
+		} else {
+			fmt.Printf("\tL2: run: %-4v created: %-7v hits: %-4v\n", i, created2, hit2)
+		}
+	}
+}

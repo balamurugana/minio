@@ -1,0 +1,243 @@
+package erasure
+
+import (
+	"bytes"
+	"io"
+	"reflect"
+	"testing"
+)
+
+func TestErasureReadShards(t *testing.T) {
+	case1Data := []byte("")
+	case2Data := []byte("1")
+	case3Data := []byte("12")
+	case4Data := []byte("123")
+	case5Data := []byte("1234")
+	case6Data := []byte("12345")
+	case7Data := []byte("123456")
+	case8Data := []byte("1234567")
+	case9Data := []byte("12345678")
+	case10Data := []byte("123456789")
+	case11Data := []byte("1234567890")
+
+	case1Result := [][][]byte{}
+	case2Result := [][][]byte{
+		{
+			{'1'},
+			{0},
+			{'S'},
+			{'b'},
+		},
+	}
+	case3Result := [][][]byte{
+		{
+			{'1'},
+			{'2'},
+			{'7'},
+			{'4'},
+		},
+	}
+	case4Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', 0},
+			{'5', 'V'},
+			{'7', 'd'},
+		},
+	}
+	case5Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+	}
+	case6Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+		{
+			{'5'},
+			{0},
+			{'_'},
+			{'j'},
+		},
+	}
+	case7Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+		{
+			{'5'},
+			{'6'},
+			{'3'},
+			{'0'},
+		},
+	}
+	case8Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+		{
+			{'5', '6'},
+			{'7', 0},
+			{'1', 'Z'},
+			{'3', 'l'},
+		},
+	}
+	case9Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+		{
+			{'5', '6'},
+			{'7', '8'},
+			{'1', '*'},
+			{'3', '$'},
+		},
+	}
+	case10Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+		{
+			{'5', '6'},
+			{'7', '8'},
+			{'1', '*'},
+			{'3', '$'},
+		},
+		{
+			{'9'},
+			{0},
+			{'K'},
+			{'r'},
+		},
+	}
+	case11Result := [][][]byte{
+		{
+			{'1', '2'},
+			{'3', '4'},
+			{'5', '>'},
+			{'7', '8'},
+		},
+		{
+			{'5', '6'},
+			{'7', '8'},
+			{'1', '*'},
+			{'3', '$'},
+		},
+		{
+			{'9'},
+			{'0'},
+			{'+'},
+			{'"'},
+		},
+	}
+
+	testCases := []struct {
+		reader          io.Reader
+		readerSize      int
+		dataCount       int
+		parityCount     int
+		blockSize       int
+		expectedResults [][][]byte
+	}{
+		{bytes.NewReader(case1Data), len(case1Data), 2, 2, 4, case1Result},
+		{bytes.NewReader(case2Data), len(case2Data), 2, 2, 4, case2Result},
+		{bytes.NewReader(case3Data), len(case3Data), 2, 2, 4, case3Result},
+		{bytes.NewReader(case4Data), len(case4Data), 2, 2, 4, case4Result},
+		{bytes.NewReader(case5Data), len(case5Data), 2, 2, 4, case5Result},
+		{bytes.NewReader(case6Data), len(case6Data), 2, 2, 4, case6Result},
+		{bytes.NewReader(case7Data), len(case7Data), 2, 2, 4, case7Result},
+		{bytes.NewReader(case8Data), len(case8Data), 2, 2, 4, case8Result},
+		{bytes.NewReader(case9Data), len(case9Data), 2, 2, 4, case9Result},
+		{bytes.NewReader(case10Data), len(case10Data), 2, 2, 4, case10Result},
+		{bytes.NewReader(case11Data), len(case11Data), 2, 2, 4, case11Result},
+
+		// {bytes.NewReader(case1Data), len(case1Data), 2, 2, 6, 0},
+		// {bytes.NewReader(case2Data), len(case2Data), 2, 2, 6, 1},
+		// {bytes.NewReader(case3Data), len(case3Data), 2, 2, 6, 1},
+		// {bytes.NewReader(case4Data), len(case4Data), 2, 2, 6, 1},
+		// {bytes.NewReader(case5Data), len(case5Data), 2, 2, 6, 1},
+		// {bytes.NewReader(case6Data), len(case6Data), 2, 2, 6, 1},
+		// {bytes.NewReader(case7Data), len(case7Data), 2, 2, 6, 1},
+		// {bytes.NewReader(case8Data), len(case8Data), 2, 2, 6, 2},
+		// {bytes.NewReader(case9Data), len(case9Data), 2, 2, 6, 2},
+		// {bytes.NewReader(case10Data), len(case10Data), 2, 2, 6, 2},
+		// {bytes.NewReader(case11Data), len(case11Data), 2, 2, 6, 2},
+
+		// {bytes.NewReader(case1Data), len(case1Data), 3, 2, 6, 0},
+		// {bytes.NewReader(case2Data), len(case2Data), 3, 2, 6, 1},
+		// {bytes.NewReader(case3Data), len(case3Data), 3, 2, 6, 1},
+		// {bytes.NewReader(case4Data), len(case4Data), 3, 2, 6, 1},
+		// {bytes.NewReader(case5Data), len(case5Data), 3, 2, 6, 1},
+		// {bytes.NewReader(case6Data), len(case6Data), 3, 2, 6, 1},
+		// {bytes.NewReader(case7Data), len(case7Data), 3, 2, 6, 1},
+		// {bytes.NewReader(case8Data), len(case8Data), 3, 2, 6, 2},
+		// {bytes.NewReader(case9Data), len(case9Data), 3, 2, 6, 2},
+		// {bytes.NewReader(case10Data), len(case10Data), 3, 2, 6, 2},
+		// {bytes.NewReader(case11Data), len(case11Data), 3, 2, 6, 2},
+
+		// {bytes.NewReader(case1Data), len(case1Data), 2, 2, 10, 0},
+		// {bytes.NewReader(case2Data), len(case2Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case3Data), len(case3Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case4Data), len(case4Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case5Data), len(case5Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case6Data), len(case6Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case7Data), len(case7Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case8Data), len(case8Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case9Data), len(case9Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case10Data), len(case10Data), 2, 2, 10, 1},
+		// {bytes.NewReader(case11Data), len(case11Data), 2, 2, 10, 1},
+
+		// {bytes.NewReader(case1Data), len(case1Data), 5, 2, 10, 0},
+		// {bytes.NewReader(case2Data), len(case2Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case3Data), len(case3Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case4Data), len(case4Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case5Data), len(case5Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case6Data), len(case6Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case7Data), len(case7Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case8Data), len(case8Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case9Data), len(case9Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case10Data), len(case10Data), 5, 2, 10, 1},
+		// {bytes.NewReader(case11Data), len(case11Data), 5, 2, 10, 1},
+	}
+
+	for i, testCase := range testCases {
+		erasure := NewErasure(testCase.dataCount, testCase.parityCount, testCase.blockSize)
+		erasure.reader = testCase.reader
+		erasure.availableSize = testCase.readerSize
+
+		for r, expectedResult := range testCase.expectedResults {
+			err := erasure.readShards()
+			if err != nil {
+				t.Fatalf("case %v: read %v: error %v", i+1, r+1, err)
+			}
+
+			if !reflect.DeepEqual(erasure.shards, expectedResult) {
+				t.Fatalf("case %v: read %v: expected: %v, got: %v", i+1, r+1, expectedResult, erasure.shards)
+			}
+		}
+
+		err := erasure.readShards()
+		if err != io.EOF {
+			t.Fatalf("case %v: error: expected: io.EOF, got: %v", i+1, err)
+		}
+	}
+}

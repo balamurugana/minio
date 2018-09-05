@@ -80,7 +80,7 @@ func (e *Encoder) CopyN(writers []io.Writer, reader io.Reader, length int64) err
 		}
 
 		if errCount > e.parityCount-1 {
-			return errors.New("too many write errors")
+			return fmt.Errorf("too many write errors. %v", errs)
 		}
 
 		return nil

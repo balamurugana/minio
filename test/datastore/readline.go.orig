@@ -1,0 +1,49 @@
+import (
+	"bytes"
+	"fmt"
+	"io"
+	"os"
+)
+
+func EfficientReadLine() {
+	hashSumFile, err := os.Open("/tmp/myobject.hashsum")
+	if err != nil {
+		panic(err)
+	}
+	var jsonData []byte
+
+	origBuf := make([]byte, 1024)
+	off := 0
+	rlen := 0
+	for {
+		buf := origBuf[off:]
+		n, err := io.ReadFull(hashSumFile, buf)
+		if err != nil {
+			if err != io.ErrUnexpectedEOF && err != io.EOF {
+				panic(err)
+			}
+		}
+
+		if n <= 0 {
+			panic(err)
+		}
+
+		buf = buf[:n]
+		if i := bytes.IndexRune(buf, '\n'); i >= 0 {
+			rlen = off + n
+			off += i + 1
+			jsonData = origBuf[:off]
+			// origBuf = origBuf[off:]
+			break
+		}
+
+		off += n
+		origBuf = append(origBuf, origBuf[:2]...)
+	}
+
+	fmt.Println("JSON data:", string(jsonData))
+
+	fmt.Println("Data available in buffer:", off, rlen, len(origBuf[off:rlen]), string(origBuf[off:rlen]))
+
+	fmt.Println(len(jsonData), cap(jsonData), len(origBuf), cap(origBuf))
+}
