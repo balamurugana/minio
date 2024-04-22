@@ -53,6 +53,7 @@ const (
 	clusterErasureSetCollectorPath   collectorPath = "/cluster/erasure-set"
 	clusterIAMCollectorPath          collectorPath = "/cluster/iam"
 	clusterConfigCollectorPath       collectorPath = "/cluster/config"
+	clusterObjectCollectorPath       collectorPath = "/cluster/object"
 
 	ilmCollectorPath           collectorPath = "/ilm"
 	auditCollectorPath         collectorPath = "/audit"
@@ -394,6 +395,15 @@ func newMetricGroups(r *prometheus.Registry) *metricsV3Collection {
 		loadILMMetrics,
 	)
 
+	clusterObjectMG := NewMetricsGroup(clusterObjectCollectorPath,
+		[]MetricDescriptor{
+			objectSizeDistributionMD,
+			objectVersionDistributionMD,
+			objectUsageObjectTotalMD,
+		},
+		loadClusterObjectMetrics,
+	)
+
 	allMetricGroups := []*MetricsGroup{
 		apiRequestsMG,
 		bucketAPIMG,
@@ -413,6 +423,7 @@ func newMetricGroups(r *prometheus.Registry) *metricsV3Collection {
 		clusterIAMMG,
 		clusterReplicationMG,
 		clusterConfigMG,
+		clusterObjectMG,
 
 		ilmMG,
 		scannerMG,
